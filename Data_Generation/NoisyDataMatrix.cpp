@@ -80,6 +80,8 @@ bool ** transposeBoolMatrix(bool** matrix, int n, int m){
 	return transposed;
 }
 
+bool addDoubleMut = false;
+
 int main(int argc, char* argv[]) {
 
 	initRand();
@@ -94,7 +96,6 @@ int main(int argc, char* argv[]) {
 	int rep = atoi(argv[8]);               // number of trees to be generated
 	int maxDoubletCount = atoi(argv[9]);   // maximum number of doublets in data
 
-	bool addDoubleMut = false;
 	int doubleMut = -1;
 	int nonRootNodeCount = n;
 	int nodeCount = n+1;
@@ -110,12 +111,12 @@ int main(int argc, char* argv[]) {
 	//cout << fileName << params.str() << "\n";
 	for(int i=0; i< rep; i++){
 		if(addDoubleMut){
-			doubleMut = 0; //pickRandomNumber(n);      // pick a mutation to be the double mutation
+			doubleMut = pickRandomNumber(n);      // pick a mutation to be the double mutation
 		}
 		stringstream params;
 		params << "_n" << n << "_m" << m << fixed << setprecision(3) << "_fn" << fn << std::scientific << "_fp" << fp;   // string of parameters to add to file name
 		if(addDoubleMut){
-			params << "_d" << doubleMut+1;
+			params << "_d" << doubleMut;
 		}
 
 		int* treeCode = getRandTreeCode(nonRootNodeCount);
@@ -123,40 +124,6 @@ int main(int argc, char* argv[]) {
 		//print_intArray(treeCode, nodeCount-1);
 		int* parentVector = prueferCode2parentVector(treeCode, treeCodeLength);
 		//print_intArray(parentVector, nodeCount);
-		
-		
-if(addDoubleMut){
-		
-		int goodtree=1;
-while(goodtree==1){		
-    goodtree=0;
-
-    if(parentVector[0]==parentVector[n]){
-      goodtree=1;
-    }
-    if(parentVector[0]==n){
-      goodtree=1;
-    }
-    if(parentVector[n]==0){
-      goodtree=1;
-    }
-    if(goodtree==1){
-    
-    		treeCode = getRandTreeCode(nonRootNodeCount);
-		//print_intArray(treeCode, nodeCount-1);
-		parentVector = prueferCode2parentVector(treeCode, treeCodeLength);  
-}
-    
-    
-//cout << goodtree << i << "\n";
-  }
-
-}
-			
-		
-		
-		
-		
 		vector<vector<int> > childLists = getChildListFromParentVector(parentVector, nonRootNodeCount);
 		stringstream newick;
 		newick << getNewickCode(childLists, nodeCount-1) << "\n";                                 // DFS of tree starting with id of root (n or n+1)
@@ -184,9 +151,7 @@ while(goodtree==1){
 
 		// create doublet samples and add noise
 
-		for(int x=-1; x<maxDoubletCount; x++){    // for doublet x, merge mutation states of samples x and m+x to create a doublet
-
-            if(x>-1){
+		for(int x=0; x<maxDoubletCount; x++){    // for doublet x, merge mutation states of samples x and m+x to create a doublet
 
 			for(int z=0; z<n; z++){
 				//cout << "columns " << x << " and " << m+x << "\n";
@@ -197,8 +162,6 @@ while(goodtree==1){
 					data[z][x] = false;               // state of mutation z is 1 if it is present in either sample x or sample m+x
 				}
 			}
-
-            }
 
 			stringstream params2;
 			params2 << params.str() << "_" << x+1 << "doublets";
@@ -578,23 +541,23 @@ int updateQueueCutter(int node, bool* queue, int next){
 
 std::string getGraphVizFile2(int* parents, int nodeCount, int doubleMut){
 	std::stringstream content;
-	nodeCount--;
 	content << "digraph G {\n";
 	content << "node [color=deeppink4, style=filled, fontcolor=white];\n";
 	for(int i=0; i<nodeCount; i++){
 		stringstream nodeLabel;
 		stringstream parentLabel;
-		if(i==nodeCount-1){                                           // node i is second copy of double mutation
+		if(i==nodeCount-2 && addDoubleMut){                                           // node i is second copy of double mutation
+            cout << addDoubleMut << "\n";
 			nodeLabel << "\"" << doubleMut+1 << "_copy" << "\"";
 		}
 		else{
 			nodeLabel <<  i+1;                   // plus 1 to have gene labels start at 1
 		}
 
-		if(parents[i]==nodeCount){
+		if(parents[i]==nodeCount-1){
 			parentLabel << "\"root\"";
 		}
-		else if(parents[i]==nodeCount-1){                                // parent of node i is second copy of double mutation
+		else if(parents[i]==nodeCount-2 && addDoubleMut){                                // parent of node i is second copy of double mutation
 			parentLabel << "\"" <<doubleMut+1 << "_copy" << "\"";
 		}
 		else{
