@@ -55,7 +55,7 @@ int** addMissingValues(int** dataMatrix, int n, int m, double na);
 string getNewickCode(vector<vector<int> > list, int root);
 string getFileName(int i, string prefix, string params, string ending);
 void writeToFile(string content, string fileName);
-std::string getGraphVizFile2(int* parents, int n, int doubleMutation);
+std::string getGraphVizFile2(int* parents, int n, int doubleMutation, bool addDoubleMut);
 string matrixToString(int** matrix, int n, int m);
 bool samplingByProb(double prob);
 double sample_0_1();
@@ -80,8 +80,6 @@ bool ** transposeBoolMatrix(bool** matrix, int n, int m){
 	return transposed;
 }
 
-bool addDoubleMut = false;
-
 int main(int argc, char* argv[]) {
 
 	initRand();
@@ -96,6 +94,7 @@ int main(int argc, char* argv[]) {
 	int rep = atoi(argv[8]);               // number of trees to be generated
 	int maxDoubletCount = atoi(argv[9]);   // maximum number of doublets in data
 
+	bool addDoubleMut = false;
 	int doubleMut = -1;
 	int nonRootNodeCount = n;
 	int nodeCount = n+1;
@@ -129,7 +128,7 @@ int main(int argc, char* argv[]) {
 		newick << getNewickCode(childLists, nodeCount-1) << "\n";                                 // DFS of tree starting with id of root (n or n+1)
 		//cout << newick.str();
 		writeToFile(newick.str(), getFileName(i, fileName, params.str(), ".newick"));
-		writeToFile(getGraphVizFile2(parentVector, nodeCount, doubleMut), getFileName(i, fileName, params.str(), ".gv"));
+		writeToFile(getGraphVizFile2(parentVector, nodeCount, doubleMut, addDoubleMut), getFileName(i, fileName, params.str(), ".gv"));
 		//cout << getGraphVizFile2(parentVector, nodeCount, doubleMut);
 		cout << getFileName(i, fileName, params.str(), ".gv") << "\n";
 		bool** ancMatrix = parentVector2ancMatrix(parentVector, nonRootNodeCount);
@@ -137,7 +136,7 @@ int main(int argc, char* argv[]) {
 
 
 		int** data;                                                                                   // for now this is the matrix where doublets are not yet merged
-		if(doubleMut){                                                                                // the mutation states of the extra cells are at the end of the data matrix
+		if(addDoubleMut){                                                                                // the mutation states of the extra cells are at the end of the data matrix
 			data = getRandomDataMatrixWithDoubleMut(n, m+maxDoubletCount, ancMatrix, doubleMut);       // therefore the data matrix has dimensions n x (m+maxDoubletCount)
 		}
 		else{
@@ -539,7 +538,7 @@ int updateQueueCutter(int node, bool* queue, int next){
 	}
 }
 
-std::string getGraphVizFile2(int* parents, int nodeCount, int doubleMut){
+std::string getGraphVizFile2(int* parents, int nodeCount, int doubleMut, bool addDoubleMut){
 	std::stringstream content;
 	content << "digraph G {\n";
 	content << "node [color=deeppink4, style=filled, fontcolor=white];\n";

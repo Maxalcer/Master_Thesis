@@ -23,6 +23,9 @@ class MutationTree():
         self.reroot(self.wt)
         self.random_mutation_tree()
 
+    def __eq__(self, value):
+        return (self.parent_vec == value.parent_vec).all()
+
     ######## Tree properties ########
     @property
     def roots(self):
@@ -165,16 +168,20 @@ class MutationTree():
         self.assign_parent(subroot, -1)
 
     def perf_spr(self, subroot, target):
-        self.prune(subroot)
-        self.assign_parent(subroot, target)
-        self._anc_mat = self.get_ancestor_matrix()
-
+        all_moves = self.all_spr()
+        if all_moves[subroot, target] == 1:
+            self.prune(subroot)
+            self.assign_parent(subroot, target)
+            self._anc_mat = self.get_ancestor_matrix()
+            return True
+        else:
+            return False
     
     def all_spr(self):
-        all_moves = []
+        all_moves = np.zeros((self.n_vtx-1, self.n_vtx))
         for i in range(self.n_vtx-1):
             for j in range(self.n_vtx):
-                if ((self.parent(i) != j) & (not self.isdescendant(j, i)) & (i != j)): all_moves.append([i,j])
+                if ((self.parent(i) != j) & (not self.isdescendant(j, i)) & (i != j)): all_moves[i,j] = 1
         return all_moves
 
     ######## Methods for Liklihood calculation ########
