@@ -65,24 +65,22 @@ class Agent():
             plt.show()
         else: print("learn first")
 
+    def get_input(self, state, actions):
+        all_spr = torch.tensor(actions, dtype=torch.float32, device=self.device)
+        state_exp = state.expand(len(actions), -1)
+        return torch.cat((state_exp, all_spr), dim=1)
+
     # Needs Batch Dim!
     def predict_step(self, state):
-        q_vals = torch.zeros(len(self.env.all_spr))
-        for i in range(len(q_vals)):
-            spr = torch.tensor([self.env.all_spr[i]], dtype=torch.float32, device=self.device)
-            with torch.no_grad(): q_vals[i] = self.policy_net(torch.cat([state, spr], dim=1))  
+        input = self.get_input(state, self.env.all_spr)
+        with torch.no_grad(): q_vals = self.policy_net(input)  
         return torch.argmax(q_vals)
     
     def predict_step_epsilon(self, state, eps_threshold):
 
         sample = random.random()
 
-        if sample > eps_threshold:
-            q_vals = torch.zeros(len(self.env.all_spr))
-            for i in range(len(q_vals)):
-                spr = torch.tensor([self.env.all_spr[i]], dtype=torch.float32, device=self.device)
-                with torch.no_grad(): q_vals[i] = self.policy_net(torch.cat([state, spr], dim=1))  
-            return torch.argmax(q_vals)
+        if sample > eps_threshold:  return self.predict_step(state)
         else: return torch.tensor([[self.env.action_space.sample()]], device=self.device, dtype=torch.long)
 
     def predict_step_epsilon_soft(self, state, eps_threshold, temperature):
@@ -90,10 +88,8 @@ class Agent():
         sample = random.random()
         if sample > eps_threshold:
             with torch.no_grad():
-                q_vals = torch.zeros(len(self.env.all_spr))
-                for i in range(len(q_vals)):
-                    spr = torch.tensor([self.env.all_spr[i]], dtype=torch.float32, device=self.device)
-                    with torch.no_grad(): q_vals[i] = self.policy_net(torch.cat([state, spr], dim=1)) 
+                input = self.get_input(state, self.env.all_spr)
+                q_vals = self.policy_net(input)  
                 probs = torch.softmax(q_vals.view(-1) / temperature, dim=0)
                 action = torch.multinomial(probs, num_samples=1)
                 return action.view(1, 1)
@@ -115,18 +111,27 @@ class Agent():
         state_action_values = self.policy_net(torch.cat([state_batch, action_batch.float()], dim=1)).squeeze()
         max_next_state_action_values = []
 
+        all_next_state_actions = [self.get_input(next_state_batch[i].unsqueeze(0), next_state_spr_batch[i]) for i in range(batch_size)]
+        all_next_state_actions = torch.cat(all_next_state_actions, dim=0)
+
+        with torch.no_grad(): q_vals = self.target_net(all_next_state_actions)
+
+        start_idx = 0
+        for i in range(batch_size):
+            num_actions = len(next_state_spr_batch[i])
+            q_vals_state = q_vals[start_idx:start_idx + num_actions] 
+            max_next_state_action_values.append(q_vals_state.max().item())  
+            start_idx += num_actions
+            
+        """
         for i in range(batch_size):
             next_state = next_state_batch[i].unsqueeze(0)
             possible_actions = next_state_spr_batch[i]  # a list of valid actions for this next_state
 
-            q_vals = []
-            for action in possible_actions:
-                action_tensor = torch.tensor([action], dtype=torch.float32, device=self.device)
-                sa_input = torch.cat([next_state, action_tensor], dim=1)
-                with torch.no_grad(): q_val = self.target_net(sa_input.unsqueeze(0)).item()
-                q_vals.append(q_val)
+            input = self.get_input(next_state, possible_actions)
+            with torch.no_grad(): q_vals = self.target_net(input)
             max_next_state_action_values.append(max(q_vals))
-
+        """
         max_next_state_action_values = torch.tensor(max_next_state_action_values, dtype=torch.float32, device=self.device)
         not_done_mask = ~done_batch
 
