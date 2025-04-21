@@ -35,7 +35,7 @@ class MutTreeEnv(gym.Env):
 
         new_llh = self.tree.conditional_llh(self.data, self.alpha, self.beta)
 
-        reward = (new_llh - self.current_llh)/self.gt_llh
+        reward = (new_llh - self.current_llh)#/self.gt_llh
         #reward = new_llh - self.gt_llh
         done = abs(new_llh - self.gt_llh) < self.eps
         if done: reward = 100
@@ -49,6 +49,9 @@ class MutTreeEnv(gym.Env):
         self.data = data
         self.gt_llh = gt_llh
         self.tree = MutationTree(self.n_mut, self.n_cells)
+        pvec = np.repeat(self.n_mut, self.n_mut + 1)
+        pvec[-1] = -1
+        self.tree.use_parent_vec(pvec, 5)
         self.current_llh = self.tree.conditional_llh(self.data, self.alpha, self.beta)
         self.all_spr = self.get_valid_actions()
         self.action_space = spaces.Discrete(len(self.all_spr))

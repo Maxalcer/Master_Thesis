@@ -60,9 +60,9 @@ class MutTreeEnv(gym.Env):
         self.data = data
         self.gt_llh = gt_llh
         self.tree = MutationTree(self.n_mut, self.n_cells)
-        #pvec = np.repeat(self.n_mut, self.n_mut + 1)
-        #pvec[-1] = -1
-        #self.tree.use_parent_vec(pvec, 5)
+        pvec = np.repeat(self.n_mut, self.n_mut + 1)
+        pvec[-1] = -1
+        self.tree.use_parent_vec(pvec, 5)
         self.current_llh = self.tree.conditional_llh(self.data, self.alpha, self.beta)
         return self.get_observation()
     

@@ -152,31 +152,39 @@ class Agent():
                 state = self.env.reset(gt_llh, all_data[i])
                 state = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
                 mse = 0
+
                 for t in count():
                     action = self.predict_step_epsilon_soft(state, eps_scheduler.get_instance(), temp_scheduler.get_instance())
                     eps_scheduler.step()
                     observation, reward, done, invalid = self.env.step(action.item())
+
                     if reward > max_reward: max_reward = reward
                     if reward < min_reward: min_reward = reward
                     self.rewards.append(reward)
+
                     reward = torch.tensor([reward], device=self.device)
                     next_state = torch.tensor(observation, dtype=torch.float32, device=self.device).unsqueeze(0)
                     done = torch.tensor([bool(done)], device=self.device)
                     memory.push(state, action, next_state, reward, done)
+
                     state = next_state
                     loss = self.__optimize_model(memory, batch_size, gamma, optimizer)
+
                     target_net_state_dict = self.target_net.state_dict()
                     policy_net_state_dict = self.policy_net.state_dict()
                     for key in policy_net_state_dict:
                         target_net_state_dict[key] = policy_net_state_dict[key]*tau + target_net_state_dict[key]*(1-tau)
                         self.target_net.load_state_dict(target_net_state_dict)
+
                     if loss is not None: mse += loss
                     if done or (t > 20): break                                            
                 temp_scheduler.step()   
                 self.learning_curve.append(mse)
+
             perc = round(100*i/len(all_data), 2)
             if ((perc % 1) == 0): 
                 print(perc, "%, MSE:", mse/(t+1))
+
         self.learning_curve = np.array(self.learning_curve)
         self.steps_done = 0
         print(min_reward, max_reward)
