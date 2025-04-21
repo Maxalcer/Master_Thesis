@@ -104,21 +104,20 @@ class Agent():
         state_batch = torch.cat(batch.state)
         action_batch = torch.cat(batch.action)
         reward_batch = torch.cat(batch.reward)
-        next_state_batch = torch.cat(batch.next_state)
-        next_state_spr_batch = batch.next_state_spr
+        next_state_actions_batch = batch.next_state_actions
         done_batch = torch.cat(batch.done)
 
         state_action_values = self.policy_net(torch.cat([state_batch, action_batch.float()], dim=1)).squeeze()
         max_next_state_action_values = []
 
-        all_next_state_actions = [self.get_input(next_state_batch[i].unsqueeze(0), next_state_spr_batch[i]) for i in range(batch_size)]
-        all_next_state_actions = torch.cat(all_next_state_actions, dim=0)
+        #all_next_state_actions = [self.get_input(next_state_batch[i].unsqueeze(0), next_state_spr_batch[i]) for i in range(batch_size)]
+        all_next_state_actions = torch.cat(next_state_actions_batch, dim=0)
 
         with torch.no_grad(): q_vals = self.target_net(all_next_state_actions)
 
         start_idx = 0
         for i in range(batch_size):
-            num_actions = len(next_state_spr_batch[i])
+            num_actions = len(next_state_actions_batch[i])
             q_vals_state = q_vals[start_idx:start_idx + num_actions] 
             max_next_state_action_values.append(q_vals_state.max().item())  
             start_idx += num_actions
@@ -185,9 +184,9 @@ class Agent():
                     reward = torch.tensor([reward], device=self.device)
                     action = torch.tensor([action], dtype=torch.long, device=self.device)
                     next_state = torch.tensor(observation, dtype=torch.float32, device=self.device).unsqueeze(0)
+                    next_state_actions = self.get_input(next_state, self.env.all_spr)
                     done = torch.tensor([bool(done)], device=self.device)
-                    next_state_spr = self.env.all_spr
-                    memory.push(state, action, next_state, next_state_spr, reward, done)
+                    memory.push(state, action, next_state_actions, reward, done)
                     state = next_state
                     loss = self.__optimize_model(memory, batch_size, gamma, optimizer)
                     target_net_state_dict = self.target_net.state_dict()

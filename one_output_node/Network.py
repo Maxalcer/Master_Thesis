@@ -16,7 +16,7 @@ class DQN(nn.Module):
         x = F.relu(self.layer2(x))
         return self.layer3(x)
     
-Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'next_state_spr', 'reward', 'done'))
+Transition = namedtuple('Transition', ('state', 'action', 'next_state_actions', 'reward', 'done'))
 
 class ReplayMemory(object):
 
