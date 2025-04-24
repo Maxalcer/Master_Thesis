@@ -187,7 +187,7 @@ class Agent():
                     action_idx = self.predict_step_epsilon_soft(state, eps_scheduler.get_instance(), temp_scheduler.get_instance())
                     action = torch.tensor([self.env.all_spr[action_idx.item()]], dtype=torch.long, device=self.device)
                     eps_scheduler.step()
-                    next_state, reward, done, _ = self.env.step(action_idx.item())
+                    next_state, reward, done = self.env.step(action_idx.item())
 
                     if reward > max_reward: max_reward = reward
                     if reward < min_reward: min_reward = reward
@@ -236,7 +236,7 @@ class Agent():
             state = self.env.reset(gt_llh, test_data[i])
             while not done and steps <= 20:
                 action = self.predict_step_soft(state, 0.5)
-                state, reward, done, invalid = self.env.step(action.item())
+                state, reward, done = self.env.step(action.item())
                 if done: solved += 1
                 steps += 1
         return round(solved/len(test_data), 2)
