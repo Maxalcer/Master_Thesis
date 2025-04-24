@@ -5,11 +5,11 @@ from mutation_tree import MutationTree
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
-import random
+import torch
 
 # Input: Ground Truth LLH, num mutations, num cells, input data matrix, fp rate, fn rate, stop eps
 class MutTreeEnv(gym.Env):
-    def __init__(self, n_mut, n_cells, alpha, beta, eps = 1):
+    def __init__(self, n_mut, n_cells, alpha, beta, device, eps = 1):
         super(MutTreeEnv, self).__init__()
         
         self.n_mut = n_mut
@@ -22,6 +22,7 @@ class MutTreeEnv(gym.Env):
         self.alpha = alpha
         self.beta = beta
         self.all_spr = None
+        self.device = device
 
         self.observation_space = spaces.Box(low=0, high=1, shape=(n_mut * (n_mut+1),), dtype=np.int8)
 
@@ -43,7 +44,9 @@ class MutTreeEnv(gym.Env):
         self.current_llh = new_llh
         self.all_spr = self.get_valid_actions()
         self.action_space = spaces.Discrete(len(self.all_spr))
-        return self.get_observation(), reward, done, {}
+        return (self.get_observation(),
+                torch.tensor([reward], device=self.device), 
+                torch.tensor([bool(done)], device=self.device))
     
     def reset(self, gt_llh, data):
         self.data = data
@@ -59,7 +62,7 @@ class MutTreeEnv(gym.Env):
     
     def get_observation(self):
         A_T = self.tree.ancestor_matrix
-        return A_T.flatten()
+        return torch.tensor(A_T.flatten(), dtype=torch.float32, device=self.device).unsqueeze(0)
     
     def get_valid_actions(self):
         return self.tree.all_spr()

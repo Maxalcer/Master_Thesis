@@ -5,7 +5,7 @@ from mutation_tree import MutationTree
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
-import random
+import torch
 
 def scale(x):
     if x > 0:
@@ -17,7 +17,7 @@ def scale(x):
 
 # Input: Ground Truth LLH, num mutations, num cells, input data matrix, fp rate, fn rate, stop eps
 class MutTreeEnv(gym.Env):
-    def __init__(self, n_mut, n_cells, alpha, beta, eps = 2):
+    def __init__(self, n_mut, n_cells, alpha, beta, device, eps = 2):
         super(MutTreeEnv, self).__init__()
         
         self.n_mut = n_mut
@@ -29,6 +29,7 @@ class MutTreeEnv(gym.Env):
         self.data = None
         self.alpha = alpha
         self.beta = beta
+        self.device = device
 
         self.observation_space = spaces.Box(low=0, high=1, shape=(n_mut * (n_mut+1),), dtype=np.int8)
 
@@ -40,8 +41,11 @@ class MutTreeEnv(gym.Env):
         j = int(action_idx % (self.n_mut+1))
         all_spr = self.get_valid_actions()
 
-        if all_spr[i,j] == 0:
-            return self.get_observation(), -50, False, True  # Invalid move penalty
+        if all_spr[i,j] == 0:                                       # Invalid move penalty
+            return (self.get_observation(),
+                    torch.tensor([-50.0], device=self.device), 
+                    torch.tensor([bool(False)], device=self.device), 
+                    True)  
         
         self.tree.perf_spr(i, j)
 
@@ -54,7 +58,10 @@ class MutTreeEnv(gym.Env):
         if done: reward = 100
         self.current_llh = new_llh
 
-        return self.get_observation(), reward, done, False
+        return (self.get_observation(), 
+                torch.tensor([reward], device=self.device), 
+                torch.tensor([bool(done)], device=self.device), 
+                False)
     
     def reset(self, gt_llh, data):
         self.data = data
@@ -68,7 +75,7 @@ class MutTreeEnv(gym.Env):
     
     def get_observation(self):
         A_T = self.tree.ancestor_matrix
-        return A_T.flatten()
+        return torch.tensor(A_T.flatten(), dtype=torch.float32, device=self.device).unsqueeze(0)
     
     def get_valid_actions(self):
         return self.tree.all_spr()

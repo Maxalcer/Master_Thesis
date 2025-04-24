@@ -2,7 +2,7 @@ import sys
 #sys.path.append('../Enviroment')
 #sys.path.append('../Tree')
 sys.path.append('../')
-from read import read_data, read_newick
+from read import *
 from mutation_tree import MutationTree
 from Enviroment import MutTreeEnv
 from Network import DQN, ReplayMemory, Transition
@@ -12,8 +12,10 @@ import math
 import random
 import torch
 import torch.optim as optim
+import torch.optim.lr_scheduler as learningrate_scheduler
 import torch.nn as nn
 from itertools import count
+from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
 class Scheduler:
@@ -32,7 +34,7 @@ class Scheduler:
 class Agent():
     def __init__(self, n_mut, n_cells, alpha, beta, device = "cuda"):
         self.device = device
-        self.env = MutTreeEnv(n_mut=n_mut, n_cells=n_cells, alpha=alpha, beta=beta)
+        self.env = MutTreeEnv(n_mut=n_mut, n_cells=n_cells, alpha=alpha, beta=beta, device=device)
         dim = n_mut*(n_mut+1)
         self.policy_net = DQN(dim, dim).to(self.device)
         self.target_net = DQN(dim, dim).to(self.device)
@@ -70,6 +72,14 @@ class Agent():
         with torch.no_grad(): 
             q_vals = self.policy_net(state)
             return torch.argmax(q_vals, dim=1)
+        
+    def predict_step_soft(self, state, temperature):
+        with torch.no_grad():
+            q_vals = self.policy_net(state)
+            probs = torch.softmax(q_vals.view(-1) / temperature, dim=0)
+            action = torch.multinomial(probs, num_samples=1)
+            return action.view(1, 1)
+
     
     def predict_step_epsilon(self, state, eps_threshold):
 
@@ -130,41 +140,39 @@ class Agent():
         all_data = read_data(data_path)
         all_trees = read_newick(data_path)
 
-        for data in all_data:
-            data[data == 97] = 0
+        
+        data_train, data_test, trees_train, trees_test = train_test_split(all_data, all_trees, test_size=0.30)
 
         self.learning_curve = []
 
         eps_scheduler = Scheduler(start=0.9, end=0.05, decay=1000)
         temp_scheduler = Scheduler(start=2, end=0.5, decay=5000)
+        #lr_scheduler = learningrate_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=0.1, total_iters=10000)
 
         min_reward = 100
         max_reward = 0
 
-        for i in range(len(all_data)):
-
+        for i in range(len(data_train)):
+            
+            self.policy_net.train()
             gt_tree = MutationTree(self.env.n_mut, self.env.n_cells)
-            gt_tree.use_newick_string(all_trees[i])
-            gt_llh = gt_tree.conditional_llh(all_data[i], self.env.alpha, self.env.beta)
+            gt_tree.use_newick_string(trees_train[i])
+            gt_llh = gt_tree.conditional_llh(data_train[i], self.env.alpha, self.env.beta)
 
             for _ in range(episodes):            
                 
-                state = self.env.reset(gt_llh, all_data[i])
-                state = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
+                state = self.env.reset(gt_llh, data_train[i])
                 mse = 0
 
                 for t in count():
                     action = self.predict_step_epsilon_soft(state, eps_scheduler.get_instance(), temp_scheduler.get_instance())
                     eps_scheduler.step()
-                    observation, reward, done, invalid = self.env.step(action.item())
+                    next_state, reward, done, invalid = self.env.step(action.item())
 
                     if reward > max_reward: max_reward = reward
                     if reward < min_reward: min_reward = reward
-                    self.rewards.append(reward)
+                    self.rewards.append(reward.item())
 
-                    reward = torch.tensor([reward], device=self.device)
-                    next_state = torch.tensor(observation, dtype=torch.float32, device=self.device).unsqueeze(0)
-                    done = torch.tensor([bool(done)], device=self.device)
                     memory.push(state, action, next_state, reward, done)
 
                     state = next_state
@@ -177,18 +185,38 @@ class Agent():
                         self.target_net.load_state_dict(target_net_state_dict)
 
                     if loss is not None: mse += loss
-                    if done or (t > 20): break                                            
-                temp_scheduler.step()   
-                self.learning_curve.append(mse)
+                    if done or (t > 20): break                                                            
+                temp_scheduler.step()
+                #lr_scheduler.step()
+                self.learning_curve.append(round(mse/(t+1), 2))
 
-            perc = round(100*i/len(all_data), 2)
-            if ((perc % 1) == 0): 
-                print(perc, "%, MSE:", mse/(t+1))
+            perc = round(100*i/len(data_train), 2)
+            if ((perc % 1) == 0):
+                acc = self.test_net(data_test, trees_test)
+                print(perc, "%, MSE:", round(mse/(t+1), 2), ", Test Acc:", acc)
 
         self.learning_curve = np.array(self.learning_curve)
         self.steps_done = 0
         print(min_reward, max_reward)
         del memory
+
+    def test_net(self, test_data, test_trees):
+
+        self.policy_net.eval()
+        solved = 0
+        for i in range(len(test_data)):
+            gt_tree = MutationTree(5,5)
+            gt_tree.use_newick_string(test_trees[i])
+            gt_llh = gt_tree.conditional_llh(test_data[i], self.env.alpha, self.env.beta)
+            done = False
+            steps = 0
+            state = self.env.reset(gt_llh, test_data[i])
+            while not done and steps <= 20:
+                action = self.predict_step_soft(state, 0.5)
+                state, reward, done, invalid = self.env.step(action.item())
+                if done: solved += 1
+                steps += 1
+        return round(solved/len(test_data), 2)
 
     def solve_tree(self, data, max_iter, gt_tree = None):
         state = self.env.reset(-float('inf'), data)
