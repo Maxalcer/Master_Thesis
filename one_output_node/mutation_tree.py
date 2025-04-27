@@ -113,82 +113,7 @@ class MutationTree():
             for j in range(self.n_mut):
                 if ((i == j) or self.isdescendant(j, i)): A_T[i,j] = 1           
         return A_T
-    
-    def get_depth(self, node):
-        depth = 0
-        while not self.isroot(node): 
-            node = self.parent(node)
-            depth += 1
-        return depth
 
-    def max_depth(self):
-        max_depth = 1
-        for i in range(self.n_mut):
-            depth = self.get_depth(i)
-            if depth > max_depth: max_depth = depth
-        return max_depth
-
-    def branching_stats(self):
-        n_children = [len(self.children(i)) for i in range(self.n_vtx)]
-        n_children = np.array(n_children)
-        return np.mean(n_children), np.std(n_children)
-
-    def max_subclone_size(self, data, alpha, beta, sig = None):
-        if sig is None: sig = self.cell_attatchment(data, alpha, beta)
-        bins = np.bincount(sig)
-        indx = bins.argmax()
-        return indx, bins[indx]
-
-    def colless_index(self):
-        total = 0
-        for node in range(self.n_vtx):
-            children = self._clist[node]
-            if len(children) < 2:
-                continue 
-            leaf_counts = [self.n_leaves(child) for child in children]
-            for a, b in combinations(leaf_counts, 2):
-                total += abs(a - b)
-        return total
-
-    def ladderization_index(self):
-        ladder_nodes = 0
-        internal_nodes = 0
-        for node in range(self.n_vtx):
-            children = self._clist[node]
-            if len(children) >= 2:
-                internal_nodes += 1
-                branching_children = sum(1 for c in children if any(self.leaves(c)))
-                if branching_children == 1:
-                    ladder_nodes += 1
-        return ladder_nodes / internal_nodes if internal_nodes > 0 else 0
-
-    def feature_vector(self, data, alpha, beta, spr):
-        mean_chld, std_chld = self.branching_stats()
-        n_leaves = self.n_leaves(self.n_mut)
-        max_node, max_size = self.max_subclone_size(data, alpha, beta)
-        in_subtree = int(self.isdescendant(max_node, spr[0]))
-        depth_subroot = self.get_depth(spr[0])
-        depth_target = self.get_depth(spr[1])
-        dist = self.distance(spr[0], spr[1], depth_subroot, depth_target)
-        feature_vector = np.array([self.n_mut,
-                                   self.n_cells,
-                                   n_leaves,
-                                   self.n_leaves(spr[0]),
-                                   self.max_depth(),
-                                   (n_leaves/(self.n_mut - n_leaves)),
-                                   self.colless_index(),
-                                   self.ladderization_index(),
-                                   mean_chld,
-                                   std_chld,
-                                   max_node,
-                                   max_size,
-                                   in_subtree,
-                                   depth_subroot,
-                                   depth_target,
-                                   dist,
-                                   spr[0],
-                                   spr[1]])
-        return feature_vector
     ######## Single-vertex properties ########
     def parent(self, vtx):
         return self._pvec[vtx]
@@ -210,6 +135,13 @@ class MutationTree():
         if not self.isroot(vtx):
             yield self._pvec[vtx]
             yield from self.ancestors(self._pvec[vtx])
+
+    def get_depth(self, vtx):
+        depth = 0
+        while not self.isroot(vtx): 
+            vtx = self.parent(vtx)
+            depth += 1
+        return depth
 
     def lca(self, vtx_u, vtx_v):
         ancestors_u = set(self.ancestors(vtx_u))  

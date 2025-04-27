@@ -34,13 +34,41 @@ class Agent():
     def __init__(self, n_mut, n_cells, alpha, beta, device = "cuda"):
         self.device = device
         self.env = MutTreeEnv(n_mut=n_mut, n_cells=n_cells, alpha=alpha, beta=beta, device=device)
-        dim = n_mut*(n_mut+1)
-        self.policy_net = DQN(dim).to(self.device)
-        self.target_net = DQN(dim).to(self.device)
+        #dim = n_mut*(n_mut+1)
+        self.policy_net = DQN(18).to(self.device)
+        self.target_net = DQN(18).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.learning_curve = None
         self.rewards = []
     
+    @property
+    def n_mut(self):
+        return self.env.n_mut
+    
+    @property
+    def n_cells(self):
+        return self.env.n_cells
+
+    @property
+    def data(self):
+        return self.env.data
+
+    @property
+    def alpha(self):
+        return self.env.alpha
+
+    @property
+    def beta(self):
+        return self.env.beta
+
+    @property
+    def all_spr(self):
+        return self.env.all_spr
+    
+    @property
+    def tree(self):
+        return self.env.tree
+
     def save_net(self, path):
         torch.save(self.policy_net, path)
 
@@ -65,40 +93,41 @@ class Agent():
             plt.savefig(path)
             plt.show()
         else: print("learn first")
-
-    def get_input(self, state, actions):
+    """
+    def get_state_actions(self, state, actions):
         all_spr = torch.tensor(actions, dtype=torch.float32, device=self.device)
         state_exp = state.expand(len(actions), -1)
         return torch.cat((state_exp, all_spr), dim=1)
-
-    # Needs Batch Dim!
-    def predict_step(self, state):
-        input = self.get_input(state, self.env.all_spr)
-        with torch.no_grad(): q_vals = self.policy_net(input)  
+    """
+    def get_state_actions(self, state, actions, data):
+        tree_features = state.tree_features(data, self.alpha, self.beta)
+        all_vectors = np.array([np.concatenate((tree_features, state.spr_features(spr, tree_features[9]))) for spr in actions])
+        return torch.tensor(all_vectors, dtype=torch.float32, device=self.device)
+    
+    def predict_step(self, state_actions):
+        with torch.no_grad(): q_vals = self.policy_net(state_actions)  
         return torch.argmax(q_vals)
     
-    def predict_step_soft(self, state, temperature):
+    def predict_step_soft(self, state_actions, temperature):
             with torch.no_grad():
-                input = self.get_input(state, self.env.all_spr)
-                q_vals = self.policy_net(input)  
+                q_vals = self.policy_net(state_actions)  
                 probs = torch.softmax(q_vals.view(-1) / temperature, dim=0)
                 action = torch.multinomial(probs, num_samples=1)
                 return action.view(1, 1)
 
-    def predict_step_epsilon(self, state, eps_threshold):
+    def predict_step_epsilon(self, state_actions, eps_threshold):
 
         sample = random.random()
 
-        if sample > eps_threshold:  return self.predict_step(state)
+        if sample > eps_threshold:  return self.predict_step(state_actions)
         else: return torch.tensor([[self.env.action_space.sample()]], device=self.device, dtype=torch.long)
 
-    def predict_step_epsilon_soft(self, state, eps_threshold, temperature):
+    def predict_step_epsilon_soft(self, state_actions, eps_threshold, temperature):
 
         sample = random.random()
         if sample > eps_threshold:
             with torch.no_grad():
-                input = self.get_input(state, self.env.all_spr)
-                q_vals = self.policy_net(input)  
+                q_vals = self.policy_net(state_actions)  
                 probs = torch.softmax(q_vals.view(-1) / temperature, dim=0)
                 action = torch.multinomial(probs, num_samples=1)
                 return action.view(1, 1)
@@ -110,16 +139,15 @@ class Agent():
 
         transitions = memory.sample(batch_size)
         batch = Transition(*zip(*transitions)) 
-        state_batch = torch.cat(batch.state)
-        action_batch = torch.cat(batch.action)
+        state_action_batch = torch.cat(batch.state_action)
         reward_batch = torch.cat(batch.reward)
         next_state_actions_batch = batch.next_state_actions
         done_batch = torch.cat(batch.done)
 
-        state_action_values = self.policy_net(torch.cat([state_batch, action_batch.float()], dim=1)).squeeze()
+        state_action_values = self.policy_net(state_action_batch).squeeze()
         max_next_state_action_values = []
 
-        #all_next_state_actions = [self.get_input(next_state_batch[i].unsqueeze(0), next_state_spr_batch[i]) for i in range(batch_size)]
+        #all_next_state_actions = [self.get_state_actions(next_state_batch[i].unsqueeze(0), next_state_spr_batch[i]) for i in range(batch_size)]
         all_next_state_actions = torch.cat(next_state_actions_batch, dim=0)
 
         with torch.no_grad(): q_vals = self.target_net(all_next_state_actions)
@@ -136,7 +164,7 @@ class Agent():
             next_state = next_state_batch[i].unsqueeze(0)
             possible_actions = next_state_spr_batch[i]  # a list of valid actions for this next_state
 
-            input = self.get_input(next_state, possible_actions)
+            input = self.get_state_actions(next_state, possible_actions)
             with torch.no_grad(): q_vals = self.target_net(input)
             max_next_state_action_values.append(max(q_vals))
         """
@@ -174,27 +202,27 @@ class Agent():
 
             self.policy_net.train()
 
-            gt_tree = MutationTree(self.env.n_mut, self.env.n_cells)
-            gt_tree.use_newick_string(trees_train[i])
-            gt_llh = gt_tree.conditional_llh(data_train[i], self.env.alpha, self.env.beta)
+            gt_tree = MutationTree(self.n_mut, self.n_cells, trees_train[i])
+            gt_llh = gt_tree.conditional_llh(data_train[i], self.alpha, self.beta)
 
             for _ in range(episodes):            
                 
-                state = self.env.reset(gt_llh, data_train[i])
+                state, actions = self.env.reset(gt_llh, data_train[i])
+                state_actions = self.get_state_actions(state, actions, data_train[i])
                 mse = 0
                 
                 for t in count():
-                    action_idx = self.predict_step_epsilon_soft(state, eps_scheduler.get_instance(), temp_scheduler.get_instance())
-                    action = torch.tensor([self.env.all_spr[action_idx.item()]], dtype=torch.long, device=self.device)
+                    action_idx = self.predict_step_epsilon_soft(state_actions, eps_scheduler.get_instance(), temp_scheduler.get_instance())
+                    state_action = state_actions[action_idx.item()]
                     eps_scheduler.step()
-                    next_state, reward, done, _ = self.env.step(action_idx.item())
+                    next_state, next_actions, reward, done = self.env.step(action_idx.item())
 
                     if reward > max_reward: max_reward = reward
                     if reward < min_reward: min_reward = reward
                     self.rewards.append(reward.item())
                     
-                    next_state_actions = self.get_input(next_state, self.env.all_spr)
-                    memory.push(state, action, next_state_actions, reward, done)
+                    next_state_actions = self.get_state_actions(next_state, next_actions, data_train[i])
+                    memory.push(state_action, next_state_actions, reward, done)
 
                     state = next_state
                     loss = self.__optimize_model(memory, batch_size, gamma, optimizer)
@@ -215,7 +243,7 @@ class Agent():
             perc = round(100*i/len(data_train), 2)
             if ((perc % 1) == 0):
                 acc = self.test_net(data_test, trees_test)
-                print(perc, "%, MSE:", mse/(t+1), ", Acc:", acc)
+                print(perc, "%, MSE:", round(mse/(t+1), 2), ", Acc:", acc)
 
         self.learning_curve = np.array(self.learning_curve)
         self.steps_done = 0
@@ -228,15 +256,16 @@ class Agent():
 
         solved = 0
         for i in range(len(test_data)):
-            gt_tree = MutationTree(5,5)
-            gt_tree.use_newick_string(test_trees[i])
-            gt_llh = gt_tree.conditional_llh(test_data[i], self.env.alpha, self.env.beta)
+            gt_tree = MutationTree(5, 5, test_trees[i])
+            gt_llh = gt_tree.conditional_llh(test_data[i], self.alpha, self.beta)
             done = False
             steps = 0
-            state = self.env.reset(gt_llh, test_data[i])
+            state, actions = self.env.reset(gt_llh, test_data[i])
+            state_actions = self.get_state_actions(state, actions, test_data[i])
             while not done and steps <= 20:
-                action = self.predict_step_soft(state, 0.5)
-                state, reward, done, invalid = self.env.step(action.item())
+                action = self.predict_step_soft(state_actions, 0.5)
+                state, actions, reward, done = self.env.step(action.item())
+                state_actions = self.get_state_actions(state, actions, test_data[i])
                 if done: solved += 1
                 steps += 1
         return round(solved/len(test_data), 2)
@@ -257,7 +286,7 @@ class Agent():
             state = torch.tensor(observation, dtype=torch.float32, device=self.device).unsqueeze(0)
             last2 = last1
             last1 = self.env.tree
-        last1_llh = last1.conditional_llh(data, self.env.alpha, self.env.beta)
-        last2_llh = last2.conditional_llh(data, self.env.alpha, self.env.beta)
+        last1_llh = last1.conditional_llh(data, self.alpha, self.beta)
+        last2_llh = last2.conditional_llh(data, self.alpha, self.beta)
         if last1_llh > last2_llh: return last1
         else: return last2
