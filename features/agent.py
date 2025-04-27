@@ -33,7 +33,7 @@ class Scheduler:
 class Agent():
     def __init__(self, n_mut, n_cells, alpha, beta, device = "cuda"):
         self.device = device
-        self.env = MutTreeEnv(n_mut=n_mut, n_cells=n_cells, alpha=alpha, beta=beta, device=device)
+        self.env = MutTreeEnv(n_mut=n_mut, n_cells=n_cells, alpha=alpha, beta=beta)
         #dim = n_mut*(n_mut+1)
         self.policy_net = DQN(18).to(self.device)
         self.target_net = DQN(18).to(self.device)
@@ -101,7 +101,7 @@ class Agent():
     """
     def get_state_actions(self, state, actions, data):
         tree_features = state.tree_features(data, self.alpha, self.beta)
-        all_vectors = np.array([np.concatenate((tree_features, state.spr_features(spr, tree_features[9]))) for spr in actions])
+        all_vectors = np.array([np.concatenate((tree_features, state.spr_features(spr, int(tree_features[9])))) for spr in actions])
         return torch.tensor(all_vectors, dtype=torch.float32, device=self.device)
     
     def predict_step(self, state_actions):
@@ -212,19 +212,22 @@ class Agent():
                 mse = 0
                 
                 for t in count():
+                    
                     action_idx = self.predict_step_epsilon_soft(state_actions, eps_scheduler.get_instance(), temp_scheduler.get_instance())
-                    state_action = state_actions[action_idx.item()]
+                    state_action = state_actions[action_idx.item()].unsqueeze(0)
                     eps_scheduler.step()
                     next_state, next_actions, reward, done = self.env.step(action_idx.item())
 
                     if reward > max_reward: max_reward = reward
                     if reward < min_reward: min_reward = reward
-                    self.rewards.append(reward.item())
+                    self.rewards.append(reward)
                     
                     next_state_actions = self.get_state_actions(next_state, next_actions, data_train[i])
+                    reward = torch.tensor([reward], device=self.device)
+                    done = torch.tensor([bool(done)], device=self.device)
                     memory.push(state_action, next_state_actions, reward, done)
 
-                    state = next_state
+                    state_actions = next_state_actions
                     loss = self.__optimize_model(memory, batch_size, gamma, optimizer)
 
                     target_net_state_dict = self.target_net.state_dict()

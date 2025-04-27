@@ -75,7 +75,8 @@ class MutTreeEnv(gym.Env):
     
     def get_observation(self):
         A_T = self.tree.ancestor_matrix
-        return torch.tensor(A_T.flatten(), dtype=torch.float32, device=self.device).unsqueeze(0)
+        A_T = torch.tensor(A_T.flatten(), dtype=torch.float32, device=self.device).unsqueeze(0)
+        return A_T
     
     def get_valid_actions(self):
         return self.tree.all_spr()

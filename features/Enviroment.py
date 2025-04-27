@@ -22,7 +22,6 @@ class MutTreeEnv(gym.Env):
         self.alpha = alpha
         self.beta = beta
         self.all_spr = None
-        self.device = device
 
         self.observation_space = spaces.Box(low=0, high=1, shape=(18,), dtype=np.int8)
 
@@ -59,7 +58,7 @@ class MutTreeEnv(gym.Env):
         self.current_llh = self.tree.conditional_llh(self.data, self.alpha, self.beta)
         self.all_spr = self.get_valid_actions()
         self.action_space = spaces.Discrete(len(self.all_spr))
-        return self.get_observation()
+        return self.get_observation(), self.all_spr
         
     def get_observation(self):
         return self.tree
