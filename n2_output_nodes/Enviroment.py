@@ -39,29 +39,20 @@ class MutTreeEnv(gym.Env):
 
         i = int(action_idx // (self.n_mut+1))
         j = int(action_idx % (self.n_mut+1))
-        all_spr = self.get_valid_actions()
-
-        if all_spr[i,j] == 0:                                       # Invalid move penalty
-            return (self.get_observation(),
-                    torch.tensor([-50.0], device=self.device), 
-                    torch.tensor([bool(False)], device=self.device), 
-                    True)  
         
         self.tree.perf_spr(i, j)
 
         new_llh = self.tree.conditional_llh(self.data, self.alpha, self.beta)
 
-        reward = (new_llh - self.current_llh)#/abs(self.gt_llh)
-        #reward = np.tanh(reward)
-        #reward = 1/(abs(new_llh - self.gt_llh)+ 0.1)
+        reward = (new_llh - self.current_llh)/abs(self.gt_llh)
         done = abs(new_llh - self.gt_llh) < self.eps
-        if done: reward = 100
+        if done: reward = 20
         self.current_llh = new_llh
 
-        return (self.get_observation(), 
+        return (self.get_observation(),
+                self.get_valid_actions(),
                 torch.tensor([reward], device=self.device), 
-                torch.tensor([bool(done)], device=self.device), 
-                False)
+                torch.tensor([bool(done)], device=self.device))
     
     def reset(self, gt_llh, data):
         self.data = data
@@ -69,9 +60,9 @@ class MutTreeEnv(gym.Env):
         self.tree = MutationTree(self.n_mut, self.n_cells)
         pvec = np.repeat(self.n_mut, self.n_mut + 1)
         pvec[-1] = -1
-        self.tree.use_parent_vec(pvec, 5)
+        self.tree.use_parent_vec(pvec, self.n_mut)
         self.current_llh = self.tree.conditional_llh(self.data, self.alpha, self.beta)
-        return self.get_observation()
+        return self.get_observation(), self.get_valid_actions()
     
     def get_observation(self):
         A_T = self.tree.ancestor_matrix
@@ -79,7 +70,9 @@ class MutTreeEnv(gym.Env):
         return A_T
     
     def get_valid_actions(self):
-        return self.tree.all_spr()
+        all_spr = self.tree.all_spr()
+        all_spr = ~torch.tensor(all_spr.flatten(), dtype=torch.bool, device=self.device).unsqueeze(0)
+        return all_spr
     
     def render(self):
         self.tree.to_graphviz("render.png")

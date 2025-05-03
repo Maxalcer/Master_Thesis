@@ -106,6 +106,12 @@ class MutationTree():
             if self.isleaf(vtx):
                 yield vtx
     
+    def get_subtree_size(self, vtx):
+        size = 1
+        for child in self.children(vtx):
+            size += self.get_subtree_size(child)
+        return size
+
     def get_ancestor_matrix(self):
         A_T = np.zeros((self.n_mut, self.n_mut + 1))
 

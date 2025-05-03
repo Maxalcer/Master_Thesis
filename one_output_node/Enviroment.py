@@ -7,6 +7,11 @@ from gymnasium import spaces
 import numpy as np
 import torch
 
+def scale(x):
+    if x < -0.1: return -1
+    elif x > 0.1: return 1
+    else: return 0
+
 # Input: Ground Truth LLH, num mutations, num cells, input data matrix, fp rate, fn rate, stop eps
 class MutTreeEnv(gym.Env):
     def __init__(self, n_mut, n_cells, alpha, beta, device, eps = 1):
@@ -36,10 +41,10 @@ class MutTreeEnv(gym.Env):
 
         new_llh = self.tree.conditional_llh(self.data, self.alpha, self.beta)
 
-        reward = (new_llh - self.current_llh)#/self.gt_llh
+        reward = 10*(new_llh - self.current_llh)/abs(self.gt_llh)
         #reward = new_llh - self.gt_llh
         done = abs(new_llh - self.gt_llh) < self.eps
-        if done: reward = 100
+        if done: reward = 50
         #done = False
         self.current_llh = new_llh
         self.all_spr = self.get_valid_actions()
@@ -54,7 +59,7 @@ class MutTreeEnv(gym.Env):
         self.tree = MutationTree(self.n_mut, self.n_cells)
         pvec = np.repeat(self.n_mut, self.n_mut + 1)
         pvec[-1] = -1
-        self.tree.use_parent_vec(pvec, 5)
+        self.tree.use_parent_vec(pvec, self.n_mut)
         self.current_llh = self.tree.conditional_llh(self.data, self.alpha, self.beta)
         self.all_spr = self.get_valid_actions()
         self.action_space = spaces.Discrete(len(self.all_spr))
@@ -63,9 +68,14 @@ class MutTreeEnv(gym.Env):
     def get_observation(self):
         A_T = self.tree.ancestor_matrix
         return torch.tensor(A_T.flatten(), dtype=torch.float32, device=self.device).unsqueeze(0)
-    
+    """
+    def get_valid_actions(self):
+        all_moves = self.tree.all_spr()
+        features = [[move[0], move[1], self.tree.distance(move[0], move[1]), self.tree.get_subtree_size(move[0])] for move in all_moves]
+        return features
+    """   
     def get_valid_actions(self):
         return self.tree.all_spr()
-    
+        
     def render(self):
         self.tree.to_graphviz("render.png")

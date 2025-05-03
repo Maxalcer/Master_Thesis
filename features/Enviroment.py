@@ -35,10 +35,10 @@ class MutTreeEnv(gym.Env):
 
         new_llh = self.tree.conditional_llh(self.data, self.alpha, self.beta)
 
-        reward = (new_llh - self.current_llh)#/self.gt_llh
+        reward = (new_llh - self.current_llh)/abs(self.gt_llh)
         #reward = new_llh - self.gt_llh
         done = abs(new_llh - self.gt_llh) < self.eps
-        if done: reward = 100
+        if done: reward = 20
         #done = False
         self.current_llh = new_llh
         self.all_spr = self.get_valid_actions()

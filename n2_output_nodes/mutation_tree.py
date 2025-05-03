@@ -150,7 +150,6 @@ class MutationTree():
 
         node_list = list(tree.find_clades(order="level"))
         node_to_index = {node: int(node.name) - 1 for node in node_list}
-
         parent_vector = [-1] * len(node_to_index)
         for node in node_list:
             for child in node.clades:
