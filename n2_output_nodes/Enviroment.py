@@ -43,10 +43,13 @@ class MutTreeEnv(gym.Env):
         self.tree.perf_spr(i, j)
 
         new_llh = self.tree.conditional_llh(self.data, self.alpha, self.beta)
-
-        reward = (new_llh - self.current_llh)/abs(self.gt_llh)
-        done = abs(new_llh - self.gt_llh) < self.eps
-        if done: reward = 20
+        if (self.alpha == 0) and (self.beta == 0):
+            reward = 30*(new_llh - self.current_llh)
+            done = (round(new_llh, 2) == 1)
+        else:
+            reward = (new_llh - self.current_llh)/abs(self.gt_llh)
+            done = abs(new_llh - self.gt_llh) < self.eps
+        if done: reward = 25
         self.current_llh = new_llh
 
         return (self.get_observation(),

@@ -1,9 +1,11 @@
 from agent import Agent
 
-agent = Agent(5, 5, 0.01, 0.2)
+agent = Agent(5, 10, 0, 0)
 
-agent.train_net("../Data", 128, 10)
+agent.train_net("../Data/5x10", 128, 20)
 
-agent.plot_learning_curve("learning_curve.png")
+agent.save_learning_curve("noiseless.npy")
 
-agent.save_net("trained_net.py")
+agent.plot_learning_curve("learning_curve_noiseless.png")
+
+agent.save_net("trained_net_noiseless.py")

@@ -207,29 +207,40 @@ class MutationTree():
     ######## Methods for Liklihood calculation ########
 
     def cell_attatchment(self, data, alpha, beta):
-        p = np.log([1-alpha, beta, alpha, 1-beta])
+        if (alpha == 0) & (beta == 0):
+            cell_profiles = data.T
+            inherited = self.ancestor_matrix.T
+            diffs = np.abs(cell_profiles[:, None, :] - inherited[None, :, :])
+            hamming = np.sum(diffs, axis=2)
+            sig = np.argmin(hamming, axis=1)
+            return sig
+        else:
+            p = np.log([1-alpha, beta, alpha, 1-beta])
 
-        sig = np.zeros(self.n_cells, dtype=int)
+            data_exp = data[:, :, None]
+            anc_exp = self._anc_mat[:, None, :]
+            indices = (data_exp * 2 + anc_exp).astype(int)
+            log_probs = p[indices]
+            llh = np.sum(log_probs, axis=0)
+            sig = np.argmax(llh, axis=1)
 
-        for j in range(self.n_cells):
-            llh = np.zeros(self.n_mut+1)
-            for k in range(self.n_mut+1):
-                for i in range(self.n_mut):
-                    llh[k] += p[int((data[i,j] * 2) + (self._anc_mat[i, k]))]            
-            sig[j] = np.argmax(llh)
-
-        return sig
+            return sig
 
     def conditional_llh(self, data, alpha, beta, sig = None):
-        p = np.log([1-alpha, beta, alpha, 1-beta])
         if sig is None: sig = self.cell_attatchment(data, alpha, beta)
+        if (alpha == 0) & (beta == 0):
+            reconstructed = self.ancestor_matrix[:, sig]
+            matches = (reconstructed == data).sum()
+            return matches/(self.n_mut * self.n_cells)
+        else:
+            p = np.log([1-alpha, beta, alpha, 1-beta])
 
-        llh = 0
+            anc_vals = self._anc_mat[np.arange(self.n_mut)[:, None], sig]
 
-        for i in range(self.n_mut):
-            for j in range(self.n_cells):
-                llh += p[int((data[i,j] * 2) + (self._anc_mat[i, sig[j]]))]
-        return llh
+            index = (data * 2 + anc_vals).astype(int)
+
+            llh = np.sum(p[index])
+            return llh
 
     def dfs(self, subroot):
         ''' Traverse the subtree rooted at subroot, in DFS order '''

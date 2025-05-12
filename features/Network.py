@@ -6,67 +6,36 @@ import torch.nn.functional as F
 
 class DQN(nn.Module):
 
-    def __init__(self, tree_size, mutation_size, layers = 3, hidden_size = 128):
+    def __init__(self, tree_size, mutation_size, layers = 1, hidden_size = 512):
         super(DQN, self).__init__()
-        """
+
         self.tree_features = nn.ModuleList()
         self.mutation_features = nn.ModuleList()
         self.combined = nn.ModuleList()
 
         self.tree_features.append(nn.Linear(tree_size, hidden_size))
         self.mutation_features.append(nn.Linear(mutation_size, hidden_size))
-        self.combined.append(nn.Linear(hidden_size*3, hidden_size))
-        
-        for i in range(layers):
+        self.combined.append(nn.Linear(64*3, hidden_size))
+
+        for _ in range(layers):
             self.tree_features.append(nn.Linear(hidden_size, hidden_size))
             self.mutation_features.append(nn.Linear(hidden_size, hidden_size))
-            self.combined.append(nn.Linear(hidden_size//(2**i), hidden_size//(2**(i+1))))
-            self.combined.append(nn.LayerNorm(hidden_size//(2**(i+1))))
-        """
+            self.combined.append(nn.Linear(hidden_size, hidden_size))
 
-        self.tree_features = nn.Sequential(
-        nn.Linear(tree_size, 128),
-        nn.LayerNorm(128),
-        nn.ReLU(),
-        nn.Linear(128, 128),
-        nn.LayerNorm(128),
-        nn.ReLU(),
-        nn.Linear(128, 128),
-        nn.LayerNorm(128),
-        nn.ReLU(),
-        nn.Linear(128, 128),
-        nn.ReLU()
-        )  
+            self.tree_features.append(nn.LayerNorm(hidden_size))
+            self.mutation_features.append(nn.LayerNorm(hidden_size))
+            self.combined.append(nn.LayerNorm(hidden_size))
 
-        self.mutation_features = nn.Sequential(
-        nn.Linear(mutation_size, 128),
-        nn.LayerNorm(128),
-        nn.ReLU(),
-        nn.Linear(128, 128),
-        nn.LayerNorm(128),
-        nn.ReLU(),
-        nn.Linear(128, 128),
-        nn.LayerNorm(128),
-        nn.ReLU(),
-        nn.Linear(128, 128),
-        nn.ReLU()
-        )  
+            self.tree_features.append(nn.LeakyReLU())
+            self.mutation_features.append(nn.LeakyReLU())
+            self.combined.append(nn.LeakyReLU())
 
-        self.combined = nn.Sequential(
-        nn.Linear(3 * hidden_size, 128),
-        nn.LayerNorm(128),
-        nn.ReLU(),
-        nn.Linear(128, 128),
-        nn.LayerNorm(128),
-        nn.ReLU(),
-        nn.Linear(128, 128),
-        nn.LayerNorm(128),
-        nn.ReLU(),
-        nn.Linear(128, 64),
-        nn.ReLU()
-        )   
+        self.tree_features.append(nn.Linear(hidden_size, 64))
+        self.mutation_features.append(nn.Linear(hidden_size, 64))
+        self.combined.append(nn.Linear(hidden_size, hidden_size))
 
-        self.out = nn.Linear(64, 1) # hidden_size//2**layers
+        self.out = nn.Linear(hidden_size, 1)
+        
 
     def forward(self, tree_x, mutation_x):
         for layer in self.tree_features:
