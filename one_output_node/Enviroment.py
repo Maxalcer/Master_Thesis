@@ -41,15 +41,19 @@ class MutTreeEnv(gym.Env):
 
         new_llh = self.tree.conditional_llh(self.data, self.alpha, self.beta)
 
-        reward = 10*(new_llh - self.current_llh)/abs(self.gt_llh)
-        #reward = new_llh - self.gt_llh
-        done = abs(new_llh - self.gt_llh) < self.eps
-        if done: reward = 50
-        #done = False
+        if (self.alpha == 0) and (self.beta == 0):
+            reward = 30*(new_llh - self.current_llh)
+            done = (round(new_llh, 2) == 1)
+        else:
+            reward = (new_llh - self.current_llh)/abs(self.gt_llh)
+            done = abs(new_llh - self.gt_llh) < self.eps
+            
+        if done: reward = 25
         self.current_llh = new_llh
         self.all_spr = self.get_valid_actions()
         self.action_space = spaces.Discrete(len(self.all_spr))
         return (self.get_observation(),
+                self.all_spr,
                 torch.tensor([reward], device=self.device), 
                 torch.tensor([bool(done)], device=self.device))
     
@@ -63,7 +67,7 @@ class MutTreeEnv(gym.Env):
         self.current_llh = self.tree.conditional_llh(self.data, self.alpha, self.beta)
         self.all_spr = self.get_valid_actions()
         self.action_space = spaces.Discrete(len(self.all_spr))
-        return self.get_observation()
+        return self.get_observation(), self.all_spr
     
     def get_observation(self):
         A_T = self.tree.ancestor_matrix

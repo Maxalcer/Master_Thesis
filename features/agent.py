@@ -12,6 +12,7 @@ import math
 import random
 import torch
 import torch.optim as optim
+import torch.optim.lr_scheduler as learningrate_scheduler
 import torch.nn as nn
 from itertools import count
 import matplotlib.pyplot as plt
@@ -38,7 +39,9 @@ class Agent():
         self.policy_net = DQN(18, dim).to(self.device)
         self.target_net = DQN(18, dim).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
+        self.target_net.eval()
         self.learning_curve = None
+        self.performance = None
     
     @property
     def n_mut(self):
@@ -122,7 +125,7 @@ class Agent():
     def predict_step(self, state_actions, matrix):
         matrix = matrix.repeat(state_actions.shape[0], 1)
         with torch.no_grad(): q_vals = self.policy_net(state_actions, matrix)  
-        return torch.argmax(q_vals), q_vals.std().item()
+        return torch.argmax(q_vals)
     
     def predict_step_soft(self, state_actions, matrix, temperature):
             with torch.no_grad():
@@ -137,9 +140,8 @@ class Agent():
         sample = random.random()
 
         if sample > eps_threshold: 
-            a, b = self.predict_step(state_actions, matrix)
-            return a, b
-        else: return torch.tensor([[self.env.action_space.sample()]], device=self.device, dtype=torch.long), 0
+            return self.predict_step(state_actions, matrix)
+        else: return torch.tensor([[self.env.action_space.sample()]], device=self.device, dtype=torch.long)
 
     def predict_step_epsilon_soft(self, state_actions, matrix, eps_threshold, temperature):
 
@@ -187,7 +189,7 @@ class Agent():
         not_done_mask = ~done_batch
 
         baseline = reward_batch.mean()
-        y = (reward_batch - baseline) + gamma * max_next_state_action_values * not_done_mask
+        y = reward_batch + gamma * max_next_state_action_values * not_done_mask
    
         criterion = nn.SmoothL1Loss()
         loss = criterion(state_action_values.view(-1).float(), y.float())
@@ -210,14 +212,15 @@ class Agent():
         data_train, data_test, trees_train, trees_test = train_test_split(all_data, all_trees, test_size=0.30)
 
         self.learning_curve = []
+        self.performance = []
 
         eps_scheduler = Scheduler(start=0.9, end=0.05, decay=episodes*len(data_train)/20)
         temp_scheduler = Scheduler(start=2, end=0.5, decay=episodes*len(data_train)/3)
         lr_scheduler = learningrate_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=0.5, total_iters=len(data_train)*episodes/2)
-
+        
+        last_perc = -1
         for e in range(episodes): 
             for i in range(len(data_train)):
-                test_std = []
                 self.policy_net.train()
 
                 gt_tree = MutationTree(self.n_mut, self.n_cells, trees_train[i])
@@ -230,8 +233,7 @@ class Agent():
                 
                 for t in count():
                     
-                    action_idx, std = self.predict_step_epsilon(state_actions, matrix, eps_scheduler.get_instance())
-                    test_std.append(std)
+                    action_idx = self.predict_step_epsilon_soft(state_actions, matrix, eps_scheduler.get_instance(), temp_scheduler.get_instance())
                     state_action = state_actions[action_idx.item()].unsqueeze(0)
                     next_state, next_actions, reward, done = self.env.step(action_idx.item())
                     
@@ -293,7 +295,7 @@ class Agent():
             matrix = torch.tensor(test_data[i].flatten(), dtype=torch.float32, device=self.device).unsqueeze(0)
             while steps <= 10:
                 last_llh = self.env.current_llh
-                action, _ = self.predict_step(state_actions, matrix)
+                action = self.predict_step(state_actions, matrix)
                 state, actions, reward, done = self.env.step(action.item())
                 state_actions = self.get_state_actions(state, actions, test_data[i])
                 steps += 1
