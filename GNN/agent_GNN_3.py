@@ -48,6 +48,12 @@ class Agent_GNN(Agent):
     def transform_matrix(self, matrix):
         return torch.tensor(matrix.flatten(), dtype=torch.float32, device=self.device).unsqueeze(0) 
 
+    def transform_action(self, action, actions, possible_actions):
+        indices = np.argwhere(possible_actions == 1)
+        action_indx = indices[action.item()]
+        action = actions[action.item()].unsqueeze(0)
+        return action, action_indx
+
     def get_graph_data(self, state, actions):
         data_list = [Data(x=actions[i], edge_index=state[i]).to(self.device) for i in range(len(actions))]
         return data_list

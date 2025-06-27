@@ -92,6 +92,9 @@ class Agent():
     
     def transform_matrix(self, matrix):
         pass
+    
+    def transform_action(self, action, actions, possible_actions):
+        pass
 
     def predict_step(self, state, actions, matrix):
         pass
@@ -131,14 +134,6 @@ class Agent():
         
         y = reward_batch + P.GAMMA * max_next_state_action_values * not_done_mask
 
-        def round_tensor(x, decimals=2):
-            factor = 10 ** decimals
-            return (x * factor).round() / factor
-        """
-        if random.random() < 0.01:  # 1% chance
-            print("state_action_values:", round_tensor(state_action_values.view(-1).float()))
-            print("target (y):", round_tensor(y.float()))
-        """
         criterion = nn.SmoothL1Loss()
         loss = criterion(state_action_values.view(-1).float(), y.float())
         optimizer.zero_grad()
@@ -183,8 +178,8 @@ class Agent():
                 for t in count():
                     state, actions = self.get_state_actions(tree)
                     action = self.predict_step_epsilon_soft(state, actions, matrix, temp_scheduler.get_instance(), eps_scheduler.get_instance())
-                    indices = np.argwhere(tree.all_possible_spr == 1)
-                    tree, reward, done = self.env.step(indices[action.item()])
+                    action, action_indx = self.transform_action(action, actions, tree.all_possible_spr)                    
+                    tree, reward, done = self.env.step(action_indx) 
                     if reward > max_rew: max_rew = reward
                     if reward < min_rew: min_rew = reward
                     reward = torch.tensor([reward], device=self.device)

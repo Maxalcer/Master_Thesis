@@ -43,6 +43,12 @@ class Agent_GNN(Agent):
         matrix = np.vstack((matrix, np.ones((1, matrix.shape[1]), dtype=matrix.dtype)))
         return torch.tensor(matrix, dtype=torch.float32, device=self.device).unsqueeze(0) 
 
+    def transform_action(self, action, actions, possible_actions):
+        i = int(action // (self.n_mut+1))
+        j = int(action % (self.n_mut+1))
+        action_indx = [i, j]
+        return action, action_indx
+    
     """
     def get_graph_data(self, state):
         return [Data(x=torch.eye(self.n_mut+1).to(self.device), edge_index=state[i]).to(self.device) for i in range(state.size(0))]
@@ -123,5 +129,5 @@ class Agent_GNN(Agent):
             next_predicted_actions = q_vals.argmax(dim=1, keepdim=True)
             #max_next_state_action_values = self.target_net(data_batch.x, data_batch.edge_index, matrix, data_batch.batch).gather(1, next_predicted_actions).squeeze()
             max_next_state_action_values = self.target_net(data_batch.x, data_batch.edge_index, data_batch.batch).gather(1, next_predicted_actions).squeeze()
-            #max_next_state_action_values = torch.clamp(max_next_state_action_values, min=-10, max=25)
+            max_next_state_action_values = torch.clamp(max_next_state_action_values, min=-10, max=25)
         return max_next_state_action_values
