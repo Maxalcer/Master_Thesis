@@ -183,41 +183,77 @@ class MutationTree():
                     ladder_nodes += 1
         return ladder_nodes / internal_nodes if internal_nodes > 0 else 0
 
-    def tree_features(self, data, alpha, beta):
+    def tree_features(self, data, alpha, beta, both_1, a1_b0, a0_b1):
         mean_chld, std_chld = self.branching_stats()
         n_leaves = self.n_leaves(self.n_mut)
         max_node, max_size = self.max_subclone_size(data, alpha, beta)
-        feature_vector = np.array([self.n_mut,
-                                   self.n_cells,
-                                   n_leaves,
-                                   self.max_depth(),
-                                   (n_leaves/(self.n_vtx - n_leaves)),
-                                   self.colless_index(),
-                                   self.ladderization_index(),
-                                   mean_chld,
-                                   std_chld,
-                                   max_node,
-                                   max_size])
-        return feature_vector
 
-    def spr_features(self, spr, max_node):
-        in_subtree = int(self.isdescendant(max_node, spr[0]))
-        depth_subroot = self.get_depth(spr[0])
-        depth_target = self.get_depth(spr[1])
-        dist = self.distance(spr[0], spr[1], depth_subroot, depth_target)
-        feature_vector = np.array([self.n_leaves(spr[0]),
-                                   in_subtree,
-                                   depth_subroot,
-                                   depth_target,
-                                   dist,
-                                   spr[0],
-                                   spr[1]])
-        return feature_vector
+        return np.array([
+            self.n_mut,
+            self.n_cells,
+            n_leaves,
+            self.max_depth(),
+            n_leaves / (self.n_vtx - n_leaves),
+            self.colless_index(),
+            self.ladderization_index(),
+            mean_chld,
+            std_chld,
+            max_node,
+            max_size,
+            np.mean(both_1), np.std(both_1),
+            np.mean(a1_b0), np.std(a1_b0),
+            np.mean(a0_b1), np.std(a0_b1),
+        ])
 
-    def feature_vector(self, data, alpha, beta, spr):
-        tree_features = self.tree_features(data, alpha, beta)
-        spr_fearures = self.spr_features(spr, tree_features[9])
-        return np.concatenate((tree_features, spr_fearures))
+
+    def spr_features(self, spr, max_node, both_1, a1_b0, a0_b1):
+        src, tgt = spr
+        depth_src = self.get_depth(src)
+        depth_tgt = self.get_depth(tgt)
+        return np.array([
+            self.n_leaves(src),
+            int(self.isdescendant(max_node, src)),
+            depth_src,
+            depth_tgt,
+            self.distance(src, tgt, depth_src, depth_tgt),
+            both_1,
+            a1_b0,
+            a0_b1,
+            src,
+            tgt
+        ])
+
+
+    def feature_vectors(self, data, alpha, beta):
+        # Preprocess and expand data
+        data_exp = np.vstack([data, np.ones((1, data.shape[1]), dtype=bool)])
+        parent_matrix = data_exp[self._pvec]
+
+        both_1 = np.sum(data_exp & parent_matrix, axis=1)
+        a1_b0  = np.sum(data_exp & ~parent_matrix, axis=1)
+        a0_b1  = np.sum(~data_exp & parent_matrix, axis=1)
+
+        # Tree-level features
+        tree_feat = self.tree_features(data, alpha, beta, both_1, a1_b0, a0_b1)
+        max_node = tree_feat[9]
+
+        # SPR features
+        spr_indices = np.argwhere(self.all_possible_spr == 1)
+        spr_feats = []
+
+        for src, tgt in spr_indices:
+            d_src, d_tgt = data_exp[src], data_exp[tgt]
+            spr_feats.append(self.spr_features(
+                [src, tgt], max_node,
+                np.sum(d_src & d_tgt),
+                np.sum(d_src & ~d_tgt),
+                np.sum(~d_src & d_tgt)
+            ))
+
+        spr_feats = np.array(spr_feats)
+        tree_feat_repeated = np.tile(tree_feat, (spr_feats.shape[0], 1))
+
+        return np.hstack((tree_feat_repeated, spr_feats))
     
     def node_features(self, data, alpha, beta):
         cell_attach = self.cell_attatchment(data, alpha, beta)
@@ -356,10 +392,20 @@ class MutationTree():
             self._all_spr = self.get_all_spr()
 
     def get_all_spr(self):
-        all_moves = np.zeros((self.n_vtx-1, self.n_vtx))
-        for i in range(self.n_vtx-1):
-            for j in range(self.n_vtx):
-                if ((self.parent(i) != j) & (not self.isdescendant(j, i)) & (i != j)): all_moves[i,j] = 1
+        n = self.n_vtx
+        all_moves = np.zeros((n - 1, n), dtype=np.uint8)
+    
+        for i in range(n - 1):
+            pi = self.parent(i)
+            for j in range(n):
+                if i == j or pi == j:
+                    continue
+                if self.isdescendant(j, i):
+                    continue
+                if self.distance(i, j) >= 5:
+                    continue
+                all_moves[i, j] = 1
+    
         return all_moves
 
     ######## Methods for Liklihood calculation ########
