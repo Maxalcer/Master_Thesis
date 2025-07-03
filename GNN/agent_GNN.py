@@ -26,7 +26,7 @@ class Agent_GNN(Agent):
         super().__init__(device)
         self.env = MutTreeEnv(n_mut=n_mut, n_cells=n_cells, alpha=alpha, beta=beta)
         #tree_dim = n_mut+1
-        tree_dim = n_cells
+        tree_dim = n_cells+n_mut+1
         mut_dim = n_mut*n_cells
         out_dim = n_mut*(n_mut+1)
         self.policy_net = DQN_GNN(tree_dim, out_dim).to(self.device)
@@ -55,7 +55,7 @@ class Agent_GNN(Agent):
     
     """
     def get_graph_data(self, state, matrix):
-        return [Data(x=matrix[i], edge_index=state[i]).to(self.device) for i in range(state.size(0))]
+        return [Data(x=torch.cat([torch.eye(self.n_mut+1).to(self.device), matrix[i]], dim=-1), edge_index=state[i]) for i in range(state.size(0))]
     
 
     def predict_step(self, state, actions, matrix):
@@ -119,6 +119,8 @@ class Agent_GNN(Agent):
         return self.policy_net(data_batch.x, data_batch.edge_index, data_batch.batch).gather(1, action)
     
     def get_max_next_state_action_values(self, next_state, next_actions, matrix):
+        next_state = torch.cat(next_state)
+        next_actions = torch.cat(next_actions)
         #data_list = self.get_graph_data(next_state)
         data_list = self.get_graph_data(next_state, matrix)
         data_batch = Batch.from_data_list(data_list).to(self.device)

@@ -41,7 +41,8 @@ class Agent():
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
         self.learning_curve = None
-        self.performance = None
+        self.performance_test = None
+        self.performance_train = None
     
     @property
     def n_mut(self):
@@ -80,7 +81,8 @@ class Agent():
     def save_learning_curve(self, path):
         if self.learning_curve is not None:
             np.save("loss_"+path, self.learning_curve)
-            np.save("perf_"+path, self.performance)
+            np.save("perf_test_"+path, self.performance_test)
+            np.save("perf_train_"+path, self.performance_train)
         else: print("learn first")
 
     def plot_learning_curve(self, path):
@@ -212,7 +214,8 @@ class Agent():
         data_train, data_test, trees_train, trees_test = train_test_split(all_data, all_trees, test_size=0.30)
 
         self.learning_curve = []
-        self.performance = []
+        self.performance_test = []
+        self.performance_train = []
 
         eps_scheduler = Scheduler(start=0.9, end=0.05, decay=episodes*len(data_train)/20)
         temp_scheduler = Scheduler(start=2, end=0.5, decay=episodes*len(data_train)/3)
@@ -259,22 +262,21 @@ class Agent():
 
                 perc = int(100*(e*len(data_train)+i)/(len(data_train)*episodes))
                 if (perc != last_perc):
-                    acc = self.test_net(data_test, trees_test)
-                    self.performance.append(acc)
-                    print(perc, "%, MSE:", round(mse/(t+1), 4), ", Test Acc:", acc)
-                    curr_lr = round(lr_scheduler.get_last_lr()[0], 6)
-                    curr_temp = round(temp_scheduler.get_instance(), 6)
-                    curr_eps = round(eps_scheduler.get_instance(), 6)
-                    print("LR:",curr_lr , "temp:", curr_temp, "eps:", curr_eps)
+                    train_acc = self.test_net(data_train, trees_train)
+                    test_acc = self.test_net(data_test, trees_test)
+                    self.performance_test.append(test_acc)
+                    self.performance_train.append(train_acc)
+                    print(perc, "%, MSE:", round(mse/(t+1), 4), ", Test Acc:", test_acc, ", Train Acc:", train_acc)
                     with open("log.txt", "a") as f:
-                        f.write(f"{perc}%, MSE: {round(mse/(t+1), 4)}, Test Acc: {acc}\n")
+                        f.write(f"{perc}%, MSE: {round(mse/(t+1), 4)}, Test Acc: {test_acc}, Train Acc: {train_acc}\n")
                     last_perc = perc
             
         train_acc = self.test_net(data_train, trees_train)
         test_acc = self.test_net(data_test, trees_test)
         print("Test Acc:", test_acc, "  Train Acc:", train_acc)
         self.learning_curve = np.array(self.learning_curve)
-        self.performance = np.array(self.performance)
+        self.performance_test = np.array(self.performance_test)
+        self.performance_train = np.array(self.performance_train)
         self.steps_done = 0
         del memory
 

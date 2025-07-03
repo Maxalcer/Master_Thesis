@@ -40,7 +40,7 @@ class MutTreeEnv(gym.Env):
         else:
             reward = (new_llh - self.current_llh)/abs(self.gt_llh)
             done = abs(new_llh - self.gt_llh) < self.eps
-        if done: reward = 25
+        if done: reward = 20
         self.current_llh = new_llh
 
         return (self.get_observation(),

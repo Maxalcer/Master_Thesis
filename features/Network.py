@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 class DQN(nn.Module):
 
-    def __init__(self, tree_size, mutation_size, layers = 1, hidden_size = 512):
+    def __init__(self, tree_size, mutation_size, layers = 3, hidden_size = 512):
         super(DQN, self).__init__()
 
         self.tree_features = nn.ModuleList()

@@ -218,6 +218,69 @@ class MutationTree():
         tree_features = self.tree_features(data, alpha, beta)
         spr_fearures = self.spr_features(spr, tree_features[9])
         return np.concatenate((tree_features, spr_fearures))
+    
+    def node_features(self, data, alpha, beta):
+        cell_attach = self.cell_attatchment(data, alpha, beta)
+        data = np.vstack((data, np.ones((1, data.shape[1]), dtype=data.dtype))).astype(bool)
+        spr = self.all_possible_spr
+        spr = np.argwhere(spr == 1)
+        height = self.max_depth()
+
+        node_features = np.empty((self.n_vtx, 10), dtype=np.float32)
+
+        node_features[:, 0] = np.arange(self.n_vtx) / self.n_vtx
+        node_features[:, 1] = np.array([self.isroot(i) for i in range(self.n_vtx)], dtype=np.float32)
+        node_features[:, 2] = np.array([self.isleaf(i) for i in range(self.n_vtx)], dtype=np.float32)
+        node_features[:, 3] = np.array([self.get_depth(i) for i in range(self.n_vtx)], dtype=np.float32) / height
+        node_features[:, 4] = np.array([len(self.children(i)) for i in range(self.n_vtx)], dtype=np.float32) / self.n_vtx
+
+        node_features[:, 5] = np.bincount(cell_attach, minlength=self.n_vtx) / self.n_cells
+
+        node_features[:, 6] = np.sum(data, axis=1) / self.n_cells
+
+        parent_matrix = data[self._pvec]
+
+        both_1 = np.sum(data & parent_matrix, axis=1)
+        a1_b0 = np.sum(data & (~parent_matrix), axis=1)
+        a0_b1 = np.sum((~data) & parent_matrix, axis=1)
+
+        node_features[:, 7] = both_1 / self.n_cells
+        node_features[:, 8] = a1_b0 / self.n_cells
+        node_features[:, 9] = a0_b1 / self.n_cells
+        
+        return node_features
+    
+    def spr_node_features(self, data):
+        spr = self.all_possible_spr
+        spr = np.argwhere(spr == 1)
+        n_spr = len(spr)
+        data = np.vstack((data, np.ones((1, data.shape[1]), dtype=data.dtype))).astype(bool)
+        spr_features = np.zeros((n_spr, self.n_vtx, 6), dtype=np.float32)
+        spr_features[:, :, 2:] = -1
+        for idx, (subroot, target) in enumerate(spr):
+            dist = self.distance(subroot, target)
+
+            both_1 = np.sum(data[subroot] & data[target]) 
+            a1_b0 = np.sum(data[subroot] & ~data[target])
+            a0_b1 = np.sum(~data[subroot] & data[target]) 
+
+            spr_features[idx, subroot, 0] = 1  
+            spr_features[idx, target, 1] = 1   
+
+            for i in [subroot, target]:
+                spr_features[idx, i, 2] = dist / self.n_vtx
+                spr_features[idx, i, 3] = both_1 / self.n_cells
+                spr_features[idx, i, 4] = a1_b0 / self.n_cells
+                spr_features[idx, i, 5] = a0_b1 / self.n_cells
+        return spr_features
+
+    def all_node_features(self, data, alpha, beta):
+        node_features = self.node_features(data, alpha, beta)
+        node_features = node_features[None, :, :]
+        spr_features = self.spr_node_features(data)
+        node_features = np.repeat(node_features, spr_features.shape[0], axis=0) 
+        return np.concatenate([node_features, spr_features], axis=2) 
+
 
     ######## Single-vertex properties ########
     def parent(self, vtx):
