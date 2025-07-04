@@ -1,11 +1,12 @@
 import sys
-#sys.path.append('../Enviroment')
-#sys.path.append('../Tree')
+sys.path.append('../Enviroment')
+sys.path.append('../Tree')
 sys.path.append('../')
-from read import read_data, read_newick
+from helper import read_data, read_newick, Scheduler
 from mutation_tree import MutationTree
 from Enviroment import MutTreeEnv
-from Network import DQN, ReplayMemory, Transition
+from Network_Features_fixed import DQN 
+import params as P
 
 import numpy as np
 import math
@@ -17,21 +18,26 @@ import torch.nn as nn
 from itertools import count
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
+from collections import namedtuple, deque
 
-class Scheduler:
-    def __init__(self, start, end, decay):
-        self.start = start
-        self.end = end
-        self.decay = decay
-        self.steps = 0
+Transition = namedtuple('Transition', ('state_action', 'next_state_actions', 'reward', 'done'))
 
-    def step(self):
-        self.steps += 1
+class ReplayMemory(object):
 
-    def get_instance(self):
-        return self.end + (self.start - self.end) * math.exp(-self.steps / self.decay)
+    def __init__(self, capacity):
+        self.memory = deque([], maxlen=capacity)
 
-class Agent():
+    def push(self, *args):
+        """Save a transition"""
+        self.memory.append(Transition(*args))
+
+    def sample(self, batch_size):
+        return random.sample(self.memory, batch_size)
+
+    def __len__(self):
+        return len(self.memory)
+
+class Agent_Features():
     def __init__(self, n_mut, n_cells, alpha, beta, device = "cuda"):
         self.device = device
         self.env = MutTreeEnv(n_mut=n_mut, n_cells=n_cells, alpha=alpha, beta=beta)
@@ -80,43 +86,9 @@ class Agent():
 
     def save_learning_curve(self, path):
         if self.learning_curve is not None:
-            np.save("loss_"+path, self.learning_curve)
-            np.save("perf_test_"+path, self.performance_test)
-            np.save("perf_train_"+path, self.performance_train)
-        else: print("learn first")
-
-    def plot_learning_curve(self, path):
-        if self.learning_curve is not None:
-            N = len(self.learning_curve)
-            x_full = np.arange(N)
-            eval_x = np.linspace(0, N - 1, 100)  
-
-            fig, ax1 = plt.subplots()
-
-            line1, = ax1.plot(x_full, self.learning_curve, color='blue', label='Train Loss')
-            ax1.set_xlabel('Episode')
-            ax1.set_ylabel('Train Loss', color='blue')
-            ax1.tick_params(axis='y', labelcolor='blue')
-
-            ax2 = ax1.twinx()
-            line2, = ax2.plot(eval_x, self.performance, color='red', label='Eval Score')
-            ax2.set_ylabel('Eval Score', color='red')
-            ax2.tick_params(axis='y', labelcolor='red')
-
-            lines = [line1, line2]
-            labels = [line.get_label() for line in lines]
-            ax1.legend(lines, labels, loc='center right')
-
-            fig.tight_layout()
-            plt.savefig(path)
-            plt.show()
-        else: print("learn first")
-
-    def plot_rewards(self, path):
-        if self.learning_curve is not None:
-            plt.plot(self.rewards)
-            plt.savefig(path)
-            plt.show()
+            np.save(path+"_loss.npy", self.learning_curve)
+            np.save(path+"_perf_train.npy", self.performance_train)
+            np.save(path+"_perf_test.npy", self.performance_test)
         else: print("learn first")
 
     def get_state_actions(self, state, actions, data):
