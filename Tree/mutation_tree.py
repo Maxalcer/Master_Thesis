@@ -235,8 +235,7 @@ class MutationTree():
 
         # Tree-level features
         tree_feat = self.tree_features(data, alpha, beta, both_1, a1_b0, a0_b1)
-        max_node = tree_feat[9]
-
+        max_node = int(tree_feat[9])
         # SPR features
         spr_indices = np.argwhere(self.all_possible_spr == 1)
         spr_feats = []

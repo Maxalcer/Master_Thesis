@@ -1,11 +1,12 @@
 import sys
 sys.path.append('../Enviroment')
+sys.path.append('../Network')
 sys.path.append('../Tree')
 sys.path.append('../')
 from helper import read_data, read_newick, Scheduler
 from mutation_tree import MutationTree
 from Enviroment import MutTreeEnv
-from Network_Features_fixed import DQN 
+from Network_features_fixed import DQN 
 import params as P
 
 import numpy as np
@@ -138,20 +139,20 @@ class Agent_Features_Fixed():
         num_actions_per_item = [state_action.shape[0] for state_action in next_state_actions]
         next_state_actions = torch.cat(next_state_actions)
         with torch.no_grad(): 
-            q_vals = self.policy_net(num_actions_per_item)
+            q_vals = self.policy_net(next_state_actions)
             q_vals_split = torch.split(q_vals, num_actions_per_item)
             argmax_indices = [q.argmax() for q in q_vals_split]
-            q_vals_target = self.target_net(num_actions_per_item)
+            q_vals_target = self.target_net(next_state_actions)
             q_vals_target_split = torch.split(q_vals_target, num_actions_per_item)
             max_next_state_action_values = torch.stack([q[i] for q, i in zip(q_vals_target_split, argmax_indices)]).to(self.device)
-            max_next_state_action_values = torch.clamp(max_next_state_action_values, min=-8, max=20)
+            max_next_state_action_values = torch.clamp(max_next_state_action_values, min=-10, max=25)
         return max_next_state_action_values.squeeze()
 
-    def __optimize_model(self, memory, batch_size, optimizer):
-        if len(memory) < batch_size:
+    def __optimize_model(self, memory, optimizer):
+        if len(memory) < P.BATCH_SIZE:
             return
 
-        transitions = memory.sample(batch_size)
+        transitions = memory.sample(P.BATCH_SIZE)
         batch = Transition(*zip(*transitions)) 
         state_action_batch = torch.cat(batch.state_action)
         reward_batch = torch.cat(batch.reward)
@@ -224,7 +225,7 @@ class Agent_Features_Fixed():
                         target_param.data.mul_(1.0 - P.TAU).add_(policy_param.data, alpha=P.TAU)
 
                     if loss is not None:     
-                        mse += loss.item()
+                        mse += loss
                     if done or (t >= P.HORIZON): break   
 
                 if loss is not None:                                                            
@@ -270,7 +271,8 @@ class Agent_Features_Fixed():
             while steps <= P.HORIZON:
                 last_llh = self.env.current_llh
                 action = self.predict_step(state_actions)
-                tree, reward, done = self.env.step(action.item())
+                state_action, action_indx = self.transform_action(action, state_actions, tree.all_possible_spr)                    
+                tree, reward, done = self.env.step(action_indx) 
                 state_actions = self.get_state_actions(tree, test_data[i])
                 steps += 1
             end_llh = max(last_llh, self.env.current_llh)

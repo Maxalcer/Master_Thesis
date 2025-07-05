@@ -38,6 +38,7 @@
 #include <locale>
 #include <random>
 #include <cstring>
+#include <algorithm>
 #include "matrices.h"
 
 using namespace std;
@@ -130,7 +131,7 @@ int main(int argc, char* argv[]) {
 		writeToFile(newick.str(), getFileName(i, fileName, params.str(), ".newick"));
 		writeToFile(getGraphVizFile2(parentVector, nodeCount, doubleMut, addDoubleMut), getFileName(i, fileName, params.str(), ".gv"));
 		//cout << getGraphVizFile2(parentVector, nodeCount, doubleMut);
-		cout << getFileName(i, fileName, params.str(), ".gv") << "\n";
+		//cout << getFileName(i, fileName, params.str(), ".gv") << "\n";
 		bool** ancMatrix = parentVector2ancMatrix(parentVector, nonRootNodeCount);
 		//print_boolMatrix(transposeBoolMatrix(ancMatrix, nodeCount, nodeCount), nodeCount, nodeCount);
 
@@ -145,9 +146,6 @@ int main(int argc, char* argv[]) {
 		//print_intMatrix(data, n, m+maxDoubletCount, ' ');
 		//cout << "\n";
 
-
-
-
 		// create doublet samples and add noise
 
 		for(int x=0; x<maxDoubletCount; x++){    // for doublet x, merge mutation states of samples x and m+x to create a doublet
@@ -161,33 +159,31 @@ int main(int argc, char* argv[]) {
 					data[z][x] = false;               // state of mutation z is 1 if it is present in either sample x or sample m+x
 				}
 			}
-
 			stringstream params2;
 			params2 << params.str() << "_" << x+1 << "doublets";
-
-			// add noise
-			int** noisy =  getNoisyMatrix(data, n, m, fp, fn);
-
-			//print_intMatrix(noisy, n, m, ' ');
-			//cout << "\n";
-			writeToFile(matrixToString(data,  n ,m), getFileName(i, fileName, params2.str(), ".data"));
-			writeToFile(matrixToString(noisy, n, m), getFileName(i, fileName, params2.str(), ".noisy"));
-
-			//cout << getFileName(i, fileName, params2.str(), ".data") << "\n";
-
-			for(int j=na_min; j<=na_max; j++){
-				double na_rate = j/100.0;
-				//cout << "missing values rate: " << na_rate << "\n";
-				int** missingData = addMissingValues(noisy, n, m, na_rate);
-				stringstream ending;
-				ending << ".noisy" << j << "pctMissingData";
-				writeToFile(matrixToString(missingData, n, m), getFileName(i, fileName, params2.str(), ending.str()));
-				//print_intMatrix(transposeMatrix(missingData, n, m), m, n, ' ');
-				//cout << "\n";
-				free_intMatrix(missingData);
-			}
-			free_intMatrix(noisy);
 		}
+			
+
+		// add noise
+		int** noisy =  getNoisyMatrix(data, n, m, fp, fn);
+		//print_intMatrix(noisy, n, m, ' ');
+		//cout << "\n";
+		writeToFile(matrixToString(data,  n ,m), getFileName(i, fileName, params.str(), ".data"));
+		writeToFile(matrixToString(noisy, n, m), getFileName(i, fileName, params.str(), ".noisy"));
+		//cout << getFileName(i, fileName, params2.str(), ".data") << "\n";
+		for(int j=na_min; j<=na_max; j++){
+			double na_rate = j/100.0;
+			//cout << "missing values rate: " << na_rate << "\n";
+			int** missingData = addMissingValues(noisy, n, m, na_rate);
+			stringstream ending;
+			ending << ".noisy" << j << "pctMissingData";
+			writeToFile(matrixToString(missingData, n, m), getFileName(i, fileName, params.str(), ending.str()));
+			//print_intMatrix(transposeMatrix(missingData, n, m), m, n, ' ');
+			//cout << "\n";
+			free_intMatrix(missingData);
+		}
+		free_intMatrix(noisy);
+
 		free_boolMatrix(ancMatrix);
 		free_intMatrix(data);
 		delete [] treeCode;
@@ -270,6 +266,24 @@ int* getRandTreeCode(int n){                // n is the number of mutations
 	return code;
 }
 
+int* permuteParentVector(int* parent, int nodes) {
+    int* perm = new int[nodes]; // n+1 nodes
+    for(int i = 0; i < nodes; i++) perm[i] = i;
+
+	std::random_device rd;
+    std::mt19937 g(rd());
+ 
+    std::shuffle(perm, perm + nodes, g);
+
+    int* new_parent = new int[nodes];
+    for(int i = 0; i < nodes; i++) {
+        new_parent[perm[i]] = (parent[i] == nodes) ? nodes : perm[parent[i]];
+    }
+
+    delete[] perm;
+    return new_parent;
+}
+
 /* given a Pruefer code, compute the corresponding parent vector */
 int* prueferCode2parentVector(int* code, int codeLength){
 	int nonRootNodeCount = codeLength+1;
@@ -308,9 +322,12 @@ int* prueferCode2parentVector(int* code, int codeLength){
 		//cout << parent[next] << " -> " << next << "\n";
 	}
 	//printf("Parent vector: ");
-	//print_intArray(parent, nodeCount);
+	//print_intArray(parent, nonRootNodeCount+1);
 	delete [] queue;
 	delete [] lastOcc;
+	
+	parent = permuteParentVector(parent, nonRootNodeCount);
+	//print_intArray(parent, nonRootNodeCount+1);
 	return parent;
 }
 
