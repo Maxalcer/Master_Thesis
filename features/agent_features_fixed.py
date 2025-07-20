@@ -3,7 +3,7 @@ sys.path.append('../Enviroment')
 sys.path.append('../Network')
 sys.path.append('../Tree')
 sys.path.append('../')
-from helper import read_data, read_newick, Scheduler
+from helper import read_data, read_newick, Scheduler, timeit
 from mutation_tree import MutationTree
 from Enviroment import MutTreeEnv
 from Network_features_fixed import DQN 
@@ -11,6 +11,7 @@ import params as P
 
 import numpy as np
 import math
+import time
 import random
 import torch
 import torch.optim as optim
@@ -39,10 +40,9 @@ class ReplayMemory(object):
         return len(self.memory)
 
 class Agent_Features_Fixed():
-    def __init__(self, n_mut, n_cells, alpha, beta, device = "cuda"):
+    def __init__(self, alpha, beta, device = "cuda"):
         self.device = device
-        self.env = MutTreeEnv(n_mut=n_mut, n_cells=n_cells, alpha=alpha, beta=beta)
-        dim = n_mut*n_cells
+        self.env = MutTreeEnv(alpha=alpha, beta=beta)
         self.policy_net = DQN().to(self.device)
         self.target_net = DQN().to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
@@ -51,14 +51,6 @@ class Agent_Features_Fixed():
         self.performance_test = None
         self.performance_train = None
     
-    @property
-    def n_mut(self):
-        return self.env.n_mut
-    
-    @property
-    def n_cells(self):
-        return self.env.n_cells
-
     @property
     def data(self):
         return self.env.data
@@ -95,12 +87,6 @@ class Agent_Features_Fixed():
     def get_state_actions(self, state, data):
         all_vectors = state.feature_vectors(data, self.alpha, self.beta)
         return torch.tensor(all_vectors, dtype=torch.float32, device=self.device)
-    
-    def transform_action(self, action, actions, possible_actions):
-        indices = np.argwhere(possible_actions == 1)
-        action_indx = indices[action.item()]
-        action = actions[action.item()].unsqueeze(0)
-        return action, action_indx
     
     def predict_step(self, state_actions):
         with torch.no_grad(): q_vals = self.policy_net(state_actions)  
@@ -196,20 +182,27 @@ class Agent_Features_Fixed():
         lr_scheduler = learningrate_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=0.5, total_iters=len(data_train)*P.EPISODES/2)
         
         last_perc = -1
-        for e in range(P.EPISODES):
+        for e in range(P.EPISODES//2):
             for i in range(len(data_train)):
 
                 self.policy_net.train()
-                gt_tree = MutationTree(self.n_mut, self.n_cells, trees_train[i])
+                gt_tree = MutationTree(data_train[i].shape[0], data_train[i].shape[1], trees_train[i])
                 gt_llh = gt_tree.conditional_llh(data_train[i], self.alpha, self.beta)      
                 tree = self.env.reset(gt_llh, data_train[i])
-                mse = 0
                 
-                for t in count():
+                for _ in range(P.HORIZON):
                     state_actions = self.get_state_actions(tree, data_train[i])
-                    action = self.predict_step_epsilon_soft(state_actions, temp_scheduler.get_instance(), eps_scheduler.get_instance())
-                    state_action, action_indx = self.transform_action(action, state_actions, tree.all_possible_spr)                    
-                    tree, reward, done = self.env.step(action_indx) 
+                    action = self.predict_step_epsilon_soft(state_actions, temp_scheduler.get_instance(), eps_scheduler.get_instance()) 
+                    state_action = state_actions[action.item()].unsqueeze(0)             
+                    swap_idx = state_action[0, 28]
+                    if (swap_idx != -1):
+                        action_indx = int(swap_idx.item())
+                        swap = True
+                    else:
+                        indices = np.argwhere(tree.all_possible_spr == 1)
+                        action_indx = indices[action.item()]
+                        swap = False     
+                    tree, reward, done = self.env.step(action_indx, swap)
                     if reward > max_rew: max_rew = reward
                     if reward < min_rew: min_rew = reward
                     
@@ -219,30 +212,29 @@ class Agent_Features_Fixed():
                     memory.push(state_action, next_state_actions, reward, done)
 
                     state_actions = next_state_actions
-                    loss = self.__optimize_model(memory, optimizer)
+                    if done: break
 
-                    for target_param, policy_param in zip(self.target_net.parameters(), self.policy_net.parameters()):
-                        target_param.data.mul_(1.0 - P.TAU).add_(policy_param.data, alpha=P.TAU)
-
-                    if loss is not None:     
-                        mse += loss
-                    if done or (t >= P.HORIZON): break   
+                loss = self.__optimize_model(memory, optimizer)
+                for target_param, policy_param in zip(self.target_net.parameters(), self.policy_net.parameters()):
+                    target_param.data.mul_(1.0 - P.TAU).add_(policy_param.data, alpha=P.TAU)                   
 
                 if loss is not None:                                                            
                     eps_scheduler.step()
                     temp_scheduler.step()
                     lr_scheduler.step()   
-                self.learning_curve.append(round(mse/(t+1), 4))
+                    self.learning_curve.append(round(loss, 4))
 
                 perc = int(100*(e*len(data_train)+i)/(len(data_train)*P.EPISODES))
                 if (perc != last_perc):
-                    train_acc = self.test_net(data_train, trees_train)
+                    train_acc = 0#self.test_net(data_train, trees_train)
                     test_acc = self.test_net(data_test, trees_test)
                     self.performance_test.append(test_acc)
                     self.performance_train.append(train_acc)
-                    print(perc, "%, MSE:", round(mse/(t+1), 4), ", Test Acc:", test_acc, ", Train Acc:", train_acc)
+                    if loss is None: print_loss = 0
+                    else: print_loss = round(loss, 4)
+                    print(perc, "%, MSE:", print_loss, ", Test Acc:", test_acc, ", Train Acc:", train_acc)
                     with open("log.txt", "a") as f:
-                        f.write(f"{perc}%, MSE: {round(mse/(t+1), 4)}, Test Acc: {test_acc}, Train Acc: {train_acc}\n")
+                        f.write(f"{perc}%, MSE: {print_loss}, Test Acc: {test_acc}, Train Acc: {train_acc}\n")
                     last_perc = perc
             
         train_acc = self.test_net(data_train, trees_train)
@@ -261,20 +253,25 @@ class Agent_Features_Fixed():
         perf = 0
         c = 0
         for i in range(len(test_data)):
-            gt_tree = MutationTree(self.n_mut, self.n_cells, test_trees[i])
+            gt_tree = MutationTree(test_data[i].shape[0], test_data[i].shape[1], test_trees[i])
             gt_llh = gt_tree.conditional_llh(test_data[i], self.alpha, self.beta)
-            done = False
-            steps = 0
             tree = self.env.reset(gt_llh, test_data[i])
             start_llh = self.env.current_llh
             state_actions = self.get_state_actions(tree, test_data[i])
-            while steps <= P.HORIZON:
+            for _ in range(P.HORIZON):
                 last_llh = self.env.current_llh
                 action = self.predict_step(state_actions)
-                state_action, action_indx = self.transform_action(action, state_actions, tree.all_possible_spr)                    
-                tree, reward, done = self.env.step(action_indx) 
+                state_action = state_actions[action.item()].unsqueeze(0)             
+                swap_idx = state_action[0, 28]
+                if (swap_idx != -1):
+                    action_indx = int(swap_idx.item())
+                    swap = True
+                else:
+                    indices = np.argwhere(tree.all_possible_spr == 1)
+                    action_indx = indices[action.item()]
+                    swap = False        
+                tree, reward, done = self.env.step(action_indx, swap) 
                 state_actions = self.get_state_actions(tree, test_data[i])
-                steps += 1
             end_llh = max(last_llh, self.env.current_llh)
             if round(start_llh - gt_llh, 5) != 0: 
                 perf += (abs(end_llh - start_llh)/abs(gt_llh - start_llh))
