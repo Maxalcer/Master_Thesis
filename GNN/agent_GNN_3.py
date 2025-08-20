@@ -7,7 +7,7 @@ sys.path.append('../')
 from helper import *
 from mutation_tree import MutationTree
 from Enviroment import MutTreeEnv
-from Network_GNN_3 import DQN_GNN
+from Network_GNN import DQN_GNN
 from agent import Agent
 import params as P
 
@@ -22,22 +22,24 @@ from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 from torch_geometric.data import Data, Batch
 
-class Agent_GNN(Agent):
+class Agent_GNN_3(Agent):
     def __init__(self, n_mut, n_cells, alpha, beta, device = "cuda"):
         super().__init__(device)
-        self.env = MutTreeEnv(n_mut=n_mut, n_cells=n_cells, alpha=alpha, beta=beta)
+        self.env = MutTreeEnv(alpha=alpha, beta=beta)
         mut_dim = n_mut*n_cells
-        self.policy_net = DQN_GNN(mut_dim).to(self.device)
-        self.target_net = DQN_GNN(mut_dim).to(self.device)
+        self.n_mut = n_mut
+        self.n_cells = n_cells
+        self.policy_net = DQN_GNN(n_mut+3, mut_dim, 1).to(self.device)
+        self.target_net = DQN_GNN(n_mut+3, mut_dim, 1).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
-    def get_state_actions(self, tree):
+    def get_state_actions(self, tree, matrix):
         state = torch.tensor(tree.edge_index, dtype=torch.long, device=self.device).unsqueeze(0)
         actions = tree.all_possible_spr
         indices = np.argwhere(actions == 1)
         num_indices = indices.shape[0]
-        features = np.zeros((num_indices, 6, 2), dtype=np.float32)
+        features = np.zeros((num_indices, self.n_mut+1, 2), dtype=np.float32)
         features[np.arange(num_indices), indices[:, 0], :] = [0, 1]
         features[np.arange(num_indices), indices[:, 1], :] = [1, 0]
         features = torch.tensor(features, dtype=torch.float32, device=self.device)
@@ -127,5 +129,5 @@ class Agent_GNN(Agent):
             q_vals_target = self.target_net(data_batch.x, data_batch.edge_index, expanded_matrix, data_batch.batch)
             q_vals_target_split = torch.split(q_vals_target, num_actions_per_item)
             max_next_state_action_values = torch.stack([q[i] for q, i in zip(q_vals_target_split, argmax_indices)]).to(self.device)
-            max_next_state_action_values = torch.clamp(max_next_state_action_values, min=-10, max=25)
+            max_next_state_action_values = torch.clamp(max_next_state_action_values, min=-10, max=20)
         return max_next_state_action_values.squeeze()

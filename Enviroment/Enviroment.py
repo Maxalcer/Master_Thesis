@@ -1,19 +1,21 @@
 import sys
+sys.path.append('../')
 sys.path.append('../Tree')
 
 from mutation_tree import MutationTree
+from helper import timeit
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
-import torch
+#import torch
 
 # Input: Ground Truth LLH, num mutations, num cells, input data matrix, fp rate, fn rate, stop eps
 class MutTreeEnv(gym.Env):
-    def __init__(self, n_mut, n_cells, alpha, beta, eps = 2):
+    def __init__(self, alpha, beta, eps = 2):
         super(MutTreeEnv, self).__init__()
         
-        self.n_mut = n_mut
-        self.n_cells = n_cells
+        self.n_mut = None
+        self.n_cells = None
         self.tree = None
         self.eps = eps
         self.gt_llh = None # ground truth likelihood
@@ -21,17 +23,13 @@ class MutTreeEnv(gym.Env):
         self.data = None
         self.alpha = alpha
         self.beta = beta
-
-        self.observation_space = spaces.Box(low=0, high=1, shape=(n_mut * (n_mut+1),), dtype=np.int8)
-
-        self.action_space = spaces.Discrete((n_mut+1)*n_mut)
     
-    def step(self, action_idx):
+    def step(self, action_idx, swap):
 
         #i = int(action_idx // (self.n_mut+1))
         #j = int(action_idx % (self.n_mut+1))
-        
-        self.tree.perf_spr(action_idx[0], action_idx[1])
+        if swap: self.tree.swap(action_idx)
+        else: self.tree.perf_spr(action_idx[0], action_idx[1])
 
         new_llh = self.tree.conditional_llh(self.data, self.alpha, self.beta)
         if (self.alpha == 0) and (self.beta == 0):
@@ -49,6 +47,8 @@ class MutTreeEnv(gym.Env):
     
     def reset(self, gt_llh, data):
         self.data = data
+        self.n_mut = self.data.shape[0]
+        self.n_cells = self.data.shape[1]
         self.gt_llh = gt_llh
         self.tree = MutationTree(self.n_mut, self.n_cells)
         pvec = np.repeat(self.n_mut, self.n_mut + 1)

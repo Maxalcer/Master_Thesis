@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 class DQN(nn.Module):
 
-    def __init__(self, tree_size, mutation_size, n_actions, layers = 3, hidden_size = 512):
+    def __init__(self, tree_size, mutation_size, n_actions, layers = 3, hidden_size = 1024):
         super(DQN, self).__init__()
         
         self.tree_features = nn.ModuleList()
@@ -16,6 +16,14 @@ class DQN(nn.Module):
         self.mutation_features.append(nn.Linear(mutation_size, hidden_size))
         self.combined.append(nn.Linear(64*3, hidden_size))
 
+        self.tree_features.append(nn.LayerNorm(hidden_size))
+        self.mutation_features.append(nn.LayerNorm(hidden_size))
+        self.combined.append(nn.LayerNorm(hidden_size))
+
+        self.tree_features.append(nn.ReLU())
+        self.mutation_features.append(nn.ReLU())
+        self.combined.append(nn.ReLU())
+
         for _ in range(layers):
             self.tree_features.append(nn.Linear(hidden_size, hidden_size))
             self.mutation_features.append(nn.Linear(hidden_size, hidden_size))
@@ -25,13 +33,21 @@ class DQN(nn.Module):
             self.mutation_features.append(nn.LayerNorm(hidden_size))
             self.combined.append(nn.LayerNorm(hidden_size))
 
-            self.tree_features.append(nn.LeakyReLU())
-            self.mutation_features.append(nn.LeakyReLU())
-            self.combined.append(nn.LeakyReLU())
+            self.tree_features.append(nn.ReLU())
+            self.mutation_features.append(nn.ReLU())
+            self.combined.append(nn.ReLU())
 
         self.tree_features.append(nn.Linear(hidden_size, 64))
         self.mutation_features.append(nn.Linear(hidden_size, 64))
         self.combined.append(nn.Linear(hidden_size, hidden_size))
+
+        self.tree_features.append(nn.LayerNorm(64))
+        self.mutation_features.append(nn.LayerNorm(64))
+        self.combined.append(nn.LayerNorm(hidden_size))
+        
+        self.tree_features.append(nn.ReLU())
+        self.mutation_features.append(nn.ReLU())
+        self.combined.append(nn.ReLU())
 
         self.out = nn.Linear(hidden_size, n_actions)
         

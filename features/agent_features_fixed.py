@@ -171,6 +171,8 @@ class Agent_Features_Fixed():
         all_data = read_data(data_path, noisy = noisy, validation = False)
         all_trees = read_newick(data_path)
 
+        #all_data, _, all_trees, _ = train_test_split(all_data, all_trees, test_size=0.85)
+
         data_train, data_test, trees_train, trees_test = train_test_split(all_data, all_trees, test_size=0.30)
 
         self.learning_curve = []
@@ -180,9 +182,9 @@ class Agent_Features_Fixed():
         eps_scheduler = Scheduler(start=0.9, end=0.05, decay=P.EPISODES*len(data_train)/20)
         temp_scheduler = Scheduler(start=2, end=0.5, decay=P.EPISODES*len(data_train)/3)
         lr_scheduler = learningrate_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=0.5, total_iters=len(data_train)*P.EPISODES/2)
-        
+        print(P.EPISODES)
         last_perc = -1
-        for e in range(P.EPISODES//2):
+        for e in range(P.EPISODES):
             for i in range(len(data_train)):
 
                 self.policy_net.train()
@@ -190,7 +192,7 @@ class Agent_Features_Fixed():
                 gt_llh = gt_tree.conditional_llh(data_train[i], self.alpha, self.beta)      
                 tree = self.env.reset(gt_llh, data_train[i])
                 
-                for _ in range(P.HORIZON):
+                for _ in range(data_train[i].shape[0]*2):
                     state_actions = self.get_state_actions(tree, data_train[i])
                     action = self.predict_step_epsilon_soft(state_actions, temp_scheduler.get_instance(), eps_scheduler.get_instance()) 
                     state_action = state_actions[action.item()].unsqueeze(0)             
@@ -226,13 +228,13 @@ class Agent_Features_Fixed():
 
                 perc = int(100*(e*len(data_train)+i)/(len(data_train)*P.EPISODES))
                 if (perc != last_perc):
-                    train_acc = 0#self.test_net(data_train, trees_train)
+                    train_acc = self.test_net(data_train, trees_train)
                     test_acc = self.test_net(data_test, trees_test)
                     self.performance_test.append(test_acc)
                     self.performance_train.append(train_acc)
                     if loss is None: print_loss = 0
                     else: print_loss = round(loss, 4)
-                    print(perc, "%, MSE:", print_loss, ", Test Acc:", test_acc, ", Train Acc:", train_acc)
+                    print(2*perc, "%, MSE:", print_loss, ", Test Acc:", test_acc, ", Train Acc:", train_acc)
                     with open("log.txt", "a") as f:
                         f.write(f"{perc}%, MSE: {print_loss}, Test Acc: {test_acc}, Train Acc: {train_acc}\n")
                     last_perc = perc
@@ -252,13 +254,13 @@ class Agent_Features_Fixed():
 
         perf = 0
         c = 0
-        for i in range(len(test_data)):
+        for i in range(len(test_data)//2):
             gt_tree = MutationTree(test_data[i].shape[0], test_data[i].shape[1], test_trees[i])
             gt_llh = gt_tree.conditional_llh(test_data[i], self.alpha, self.beta)
             tree = self.env.reset(gt_llh, test_data[i])
             start_llh = self.env.current_llh
             state_actions = self.get_state_actions(tree, test_data[i])
-            for _ in range(P.HORIZON):
+            for _ in range(test_data[i].shape[0]*2):
                 last_llh = self.env.current_llh
                 action = self.predict_step(state_actions)
                 state_action = state_actions[action.item()].unsqueeze(0)             
@@ -277,3 +279,35 @@ class Agent_Features_Fixed():
                 perf += (abs(end_llh - start_llh)/abs(gt_llh - start_llh))
                 c += 1
         return round(perf/c, 4)
+    
+    def solve_tree(self, data, horizon):
+        self.policy_net.eval()
+        n_mut = data.shape[0]
+        n_cells = data.shape[1]
+        tree = MutationTree(n_mut, n_cells)
+        pvec = np.repeat(n_mut, n_mut + 1)
+        pvec[-1] = -1
+        tree.use_parent_vec(pvec, n_mut)
+        start_llh = round(tree.conditional_llh(data, self.alpha, self.beta), 4)
+        current_llh = start_llh
+
+        for _ in range(horizon):
+            last_llh = current_llh
+            state_actions = self.get_state_actions(tree, data)
+            action = self.predict_step(state_actions)
+            state_action = state_actions[action.item()].unsqueeze(0)             
+            swap_idx = state_action[0, 28]
+            
+            if (swap_idx != -1):
+                action_indx = int(swap_idx.item())
+                tree.swap(action_indx)
+            else:
+                indices = np.argwhere(tree.all_possible_spr == 1)
+                action_indx = indices[action.item()]
+                tree.perf_spr(action_indx[0], action_indx[1])       
+
+            current_llh = round(tree.conditional_llh(data, self.alpha, self.beta), 4)
+        
+        end_llh = max(last_llh, current_llh)
+        
+        return start_llh, end_llh

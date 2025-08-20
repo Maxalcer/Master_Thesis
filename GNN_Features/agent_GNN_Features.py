@@ -175,9 +175,8 @@ class Agent_GNN_Features():
         memory = ReplayMemory(10000)
         noisy = (self.alpha != 0) | (self.beta != 0)
 
-        all_data = read_data(data_path, noisy = noisy, validation = False)
+        all_data = read_data(data_path, noisy = noisy)
         all_trees = read_newick(data_path)
-
         data_train, data_test, trees_train, trees_test = train_test_split(all_data, all_trees, test_size=0.30)
 
         self.learning_curve = []
@@ -199,7 +198,7 @@ class Agent_GNN_Features():
                 state, actions = self.get_state_actions(tree, data_train[i])
                 graph_data = self.get_graph_data(state, actions)
 
-                for _ in range(P.HORIZON):                
+                for _ in range(data_train[i].shape[0]*2):                
                     action = self.predict_step_epsilon_soft(Batch.from_data_list(graph_data), temp_scheduler.get_instance(), eps_scheduler.get_instance())
                     swap_idx = torch.where(actions[action.item(), :, -1] == 1)[0]
                     if (len(swap_idx) != 0):
@@ -237,18 +236,18 @@ class Agent_GNN_Features():
                     self.learning_curve.append(round(loss.item(), 4))
                 #end = time.time()
                 #print(f"Time taken by your_function: {end - start:.4f} seconds")
-                perc = int(100*(e*len(data_train)+i)/(len(data_train)*P.EPISODES))
+                perc = int(50*(e*len(data_train)+i)/(len(data_train)*P.EPISODES))
                 if (perc != last_perc):
-                    _, data_train_sub, _, trees_train_sub = train_test_split(data_train, trees_train, test_size=0.30)
+                    _, data_train_sub, _, trees_train_sub = train_test_split(data_train, trees_train, test_size=0.5)
                     train_acc = self.test_net(data_train_sub, trees_train_sub)
                     test_acc = self.test_net(data_test, trees_test)
                     self.performance_test.append(test_acc)
                     self.performance_train.append(train_acc)
                     if loss is None: print_loss = 0
                     else: print_loss = round(loss.item(), 4)
-                    print(perc, "%, MSE:", print_loss, ", Test Acc:", test_acc, ", Train Acc:", train_acc)
+                    print(2*perc, "%, MSE:", print_loss, ", Test Acc:", test_acc, ", Train Acc:", train_acc)
                     with open("log.txt", "a") as f:
-                        f.write(f"{perc}%, MSE: {print_loss}, Test Acc: {test_acc}, Train Acc: {train_acc}\n")
+                        f.write(f"{2*perc}%, MSE: {print_loss}, Test Acc: {test_acc}, Train Acc: {train_acc}\n")
                     last_perc = perc
 
         print(min_rew, max_rew)
@@ -273,7 +272,7 @@ class Agent_GNN_Features():
             state, actions = self.get_state_actions(tree, test_data[i])
             graph_data = self.get_graph_data(state, actions)
             start_llh = self.env.current_llh
-            for _ in range(P.HORIZON):
+            for _ in range(test_data[i].shape[0]*2):
                 last_llh = self.env.current_llh
                 action = self.predict_step(Batch.from_data_list(graph_data))
                 swap_idx = torch.where(actions[action.item(), :, -1] == 1)[0]
@@ -292,3 +291,33 @@ class Agent_GNN_Features():
                 perf += (abs(end_llh - start_llh)/abs(gt_llh - start_llh))
                 c += 1
         return round(perf/c, 4)
+    
+    def solve_tree(self, data, horizon):
+        self.policy_net.eval()
+        n_mut = data.shape[0]
+        n_cells = data.shape[1]
+        tree = MutationTree(n_mut, n_cells)
+        pvec = np.repeat(n_mut, n_mut + 1)
+        pvec[-1] = -1
+        tree.use_parent_vec(pvec, n_mut)
+        start_llh = round(tree.conditional_llh(data, self.alpha, self.beta), 4)
+        current_llh = start_llh
+
+        for _ in range(horizon):
+            last_llh = current_llh
+            state, actions = self.get_state_actions(tree, data)
+            graph_data = self.get_graph_data(state, actions)
+            action = self.predict_step(Batch.from_data_list(graph_data))
+            swap_idx = torch.where(actions[action.item(), :, -1] == 1)[0]
+            if (len(swap_idx) != 0):
+                action_indx = swap_idx.item()
+                tree.swap(action_indx)
+            else:
+                indices = np.argwhere(tree.all_possible_spr == 1)
+                action_indx = indices[action.item()]
+                tree.perf_spr(action_indx[0], action_indx[1])
+            current_llh = round(tree.conditional_llh(data, self.alpha, self.beta), 4)
+        
+        end_llh = max(last_llh, current_llh)
+        
+        return start_llh, end_llh
