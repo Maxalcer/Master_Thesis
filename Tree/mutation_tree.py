@@ -174,14 +174,10 @@ class MutationTree():
     def ladderization_index(self):
         ladder_nodes = 0
         internal_nodes = 0
-        for node in range(self.n_vtx):
-            children = self._clist[node]
-            if len(children) >= 2:
-                internal_nodes += 1
-                branching_children = sum(1 for c in children if any(self.leaves(c)))
-                if branching_children == 1:
-                    ladder_nodes += 1
-        return ladder_nodes / internal_nodes if internal_nodes > 0 else 0
+        for vtx in range(self.n_vtx):
+            if len(self._clist[vtx]) == 1: ladder_nodes += 1
+            if len(self._clist[vtx]) >= 1: internal_nodes += 1
+        return ladder_nodes/internal_nodes
 
     def tree_features(self, data, alpha, beta, both_1, a1_b0, a0_b1):
         mean_chld, std_chld = self.branching_stats()
@@ -191,18 +187,38 @@ class MutationTree():
         return np.array([
             self.n_mut,
             self.n_cells,
-            n_leaves,
-            self.max_depth(),
+            n_leaves/self.n_vtx,
+            self.max_depth()/self.n_vtx,
             n_leaves / (self.n_vtx - n_leaves),
             self.colless_index(),
             self.ladderization_index(),
-            mean_chld,
-            std_chld,
-            max_node,
-            max_size,
-            np.mean(both_1), np.std(both_1),
-            np.mean(a1_b0), np.std(a1_b0),
-            np.mean(a0_b1), np.std(a0_b1),
+            mean_chld/self.n_vtx,
+            std_chld/self.n_vtx,
+            max_node/self.n_vtx,
+            max_size/self.n_cells,
+            np.mean(both_1)/self.n_cells, np.std(both_1)/self.n_cells,
+            np.mean(a1_b0)/self.n_cells, np.std(a1_b0)/self.n_cells,
+            np.mean(a0_b1)/self.n_cells, np.std(a0_b1)/self.n_cells,
+            self.conditional_llh(data, alpha, beta)
+        ])
+    
+    def tree_features_sub(self, data, alpha, beta):
+        mean_chld, std_chld = self.branching_stats()
+        n_leaves = self.n_leaves(self.n_mut)
+        max_node, max_size = self.max_subclone_size(data, alpha, beta)
+
+        return np.array([
+            self.n_mut,
+            self.n_cells,
+            n_leaves/self.n_vtx,
+            self.max_depth()/self.n_vtx,
+            n_leaves / (self.n_vtx - n_leaves),
+            self.colless_index(),
+            self.ladderization_index(),
+            mean_chld/self.n_vtx,
+            std_chld/self.n_vtx,
+            max_node/self.n_vtx,
+            max_size/self.n_cells
         ])
 
 
@@ -211,18 +227,31 @@ class MutationTree():
         depth_src = self.get_depth(src)
         depth_tgt = self.get_depth(tgt)
         return np.array([
-            self.n_leaves(src),
+            self.n_leaves(src)/self.n_vtx,
             int(self.isdescendant(max_node, src)),
-            depth_src,
-            depth_tgt,
-            self.distance(src, tgt, depth_src, depth_tgt),
-            both_1,
-            a1_b0,
-            a0_b1,
+            depth_src/self.n_vtx,
+            depth_tgt/self.n_vtx,
+            self.distance(src, tgt, depth_src, depth_tgt)/self.n_vtx,
+            both_1/self.n_cells,
+            a1_b0/self.n_cells,
+            a0_b1/self.n_cells,
             src,
             tgt
         ])
-
+    
+    def spr_features_sub(self, spr, max_node):
+        src, tgt = spr
+        depth_src = self.get_depth(src)
+        depth_tgt = self.get_depth(tgt)
+        return np.array([
+            self.n_leaves(src)/self.n_vtx,
+            int(self.isdescendant(max_node, src)),
+            depth_src/self.n_vtx,
+            depth_tgt/self.n_vtx,
+            self.distance(src, tgt, depth_src, depth_tgt)/self.n_vtx,
+            src,
+            tgt
+        ])
 
     def feature_vectors(self, data, alpha, beta):
         # Preprocess and expand data
@@ -235,10 +264,12 @@ class MutationTree():
 
         # Tree-level features
         tree_feat = self.tree_features(data, alpha, beta, both_1, a1_b0, a0_b1)
-        max_node = int(tree_feat[9])
+        max_node = int(tree_feat[9]*self.n_vtx)
         # SPR features
         spr_indices = np.argwhere(self.all_possible_spr == 1)
         spr_feats = []
+        swap_feats = []
+        llhs = []
 
         for src, tgt in spr_indices:
             d_src, d_tgt = data_exp[src], data_exp[tgt]
@@ -248,10 +279,47 @@ class MutationTree():
                 np.sum(d_src & ~d_tgt),
                 np.sum(~d_src & d_tgt)
             ))
+            swap_feats.append([-1, -1, -1, -1])
+            new_tree = MutationTree(self.n_mut, self.n_cells)
+            new_tree.copy_structure(self)
+            new_tree.perf_spr(src, tgt)
+            llhs.append(new_tree.conditional_llh(data, alpha, beta))
+
+        swaps_idx = np.where((self._pvec != (self.n_vtx - 1)))[0][0:-1]
+        
+        for si in swaps_idx:
+            spr_feats.append([-1,-1,-1,-1,-1,-1,-1,-1,-1,-1])
+            d_i = data_exp[si]
+            d_p = data_exp[self.parent(si)]
+            swap_feats.append([si,
+                               np.sum(d_i & d_p),
+                               np.sum(d_i & ~d_p),
+                               np.sum(~d_i & d_p)])
+            new_tree = MutationTree(self.n_mut, self.n_cells)
+            new_tree.copy_structure(self)
+            new_tree.swap(si)
+            llhs.append(new_tree.conditional_llh(data, alpha, beta))
+
+        spr_feats = np.array(spr_feats)
+        swap_feats = np.array(swap_feats)
+        llhs = np.array(llhs).reshape(-1, 1)
+        tree_feat_repeated = np.tile(tree_feat, (spr_feats.shape[0], 1))
+        return np.hstack((tree_feat_repeated, spr_feats, swap_feats, llhs))
+    
+    def feature_vectors_sub(self, data, alpha, beta):
+
+        # Tree-level features
+        tree_feat = self.tree_features_sub(data, alpha, beta)
+        max_node = int(tree_feat[9]*self.n_vtx)
+        # SPR features
+        spr_indices = np.argwhere(self.all_possible_spr == 1)
+        spr_feats = []
+
+        for src, tgt in spr_indices:
+            spr_feats.append(self.spr_features_sub([src, tgt], max_node))
 
         spr_feats = np.array(spr_feats)
         tree_feat_repeated = np.tile(tree_feat, (spr_feats.shape[0], 1))
-
         return np.hstack((tree_feat_repeated, spr_feats))
     
     def node_features(self, data, alpha, beta):
@@ -278,11 +346,29 @@ class MutationTree():
         both_1 = np.sum(data & parent_matrix, axis=1)
         a1_b0 = np.sum(data & (~parent_matrix), axis=1)
         a0_b1 = np.sum((~data) & parent_matrix, axis=1)
+        """
+        descendants = self.get_all_descendants()
 
+        mean_both_1 = np.array([np.mean(both_1[d]) if len(d) > 0 else -1.0 for d in descendants])
+        std_both_1 = np.array([np.std(both_1[d]) if len(d) > 0 else -1.0 for d in descendants])
+
+        mean_a1_b0 = np.array([np.mean(a1_b0[d]) if len(d) > 0 else -1.0 for d in descendants])
+        std_a1_b0 = np.array([np.std(a1_b0[d]) if len(d) > 0 else -1.0 for d in descendants])
+
+        mean_a0_b1 = np.array([np.mean(a0_b1[d]) if len(d) > 0 else -1.0 for d in descendants])
+        std_a0_b1 = np.array([np.std(a0_b1[d]) if len(d) > 0 else -1.0 for d in descendants])
+        """
         node_features[:, 7] = both_1 / self.n_cells
         node_features[:, 8] = a1_b0 / self.n_cells
         node_features[:, 9] = a0_b1 / self.n_cells
-        
+        """
+        node_features[:, 10] = mean_both_1 / self.n_cells
+        node_features[:, 11] = std_both_1 / self.n_cells
+        node_features[:, 12] = mean_a1_b0 / self.n_cells
+        node_features[:, 13] = std_a1_b0 / self.n_cells
+        node_features[:, 14] = mean_a0_b1 / self.n_cells
+        node_features[:, 15] = std_a0_b1 / self.n_cells 
+        """    
         return node_features
     
     def spr_node_features(self, data):
@@ -313,8 +399,16 @@ class MutationTree():
         node_features = self.node_features(data, alpha, beta)
         node_features = node_features[None, :, :]
         spr_features = self.spr_node_features(data)
-        node_features = np.repeat(node_features, spr_features.shape[0], axis=0) 
-        return np.concatenate([node_features, spr_features], axis=2) 
+        swaps_idx = np.where((self._pvec != (self.n_vtx - 1)))[0][0:-1]
+        spr_dim = spr_features.shape[0]
+        swaps_dim = len(swaps_idx)
+        spr_features = np.concatenate([spr_features, np.full((swaps_dim, self.n_vtx, 6), -1, dtype=np.float32)])
+        node_features = np.repeat(node_features, spr_dim + swaps_dim, axis=0)
+        swaps = np.zeros((spr_dim + swaps_dim, self.n_vtx, 1), dtype=np.float32)
+        if swaps_dim !=0:
+            swap_batch_indices = np.arange(spr_dim, spr_dim + swaps_dim)
+            swaps[swap_batch_indices, swaps_idx, 0] = 1
+        return np.concatenate([node_features, spr_features, swaps], axis=2) 
 
 
     ######## Single-vertex properties ########
@@ -338,6 +432,27 @@ class MutationTree():
         if not self.isroot(vtx):
             yield self._pvec[vtx]
             yield from self.ancestors(self._pvec[vtx])
+
+    def descendants(self, vtx):
+        stack = list(self.children(vtx))
+        while stack:
+            node = stack.pop()
+            yield node
+            stack.extend(self.children(node))
+
+    def get_all_descendants(self):
+
+        descendants = [[] for _ in range(self.n_vtx)]
+
+        def post_order(v):
+            for child in self.children(v):
+                post_order(child)
+                descendants[v].append(child)
+                descendants[v].extend(descendants[child])
+
+        post_order(self.main_root)
+
+        return descendants
 
     def lca(self, vtx_u, vtx_v):
         ancestors_u = set(self.ancestors(vtx_u))  
@@ -381,6 +496,18 @@ class MutationTree():
     def prune(self, subroot):
         ''' Prune the subtree whose root is subroot. If subroot is already a root, nothing happens. '''
         self.assign_parent(subroot, -1)
+
+    def swap(self, vtx):
+        p = self.parent(vtx)
+        if p != (self.n_vtx - 1):
+            new_pvec = self._pvec.copy()
+            childr_vtx = np.where(self._pvec == vtx)
+            childr_p = np.where(self._pvec == p)
+            new_pvec[childr_vtx] = p
+            new_pvec[childr_p] = vtx
+            new_pvec[vtx] = self._pvec[p]
+            new_pvec[p] = vtx
+            self.use_parent_vec(new_pvec, len(new_pvec) - 1)  
 
     def perf_spr(self, subroot, target):
         if self._all_spr[subroot, target] == 1:
