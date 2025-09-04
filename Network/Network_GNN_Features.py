@@ -52,7 +52,6 @@ class DQN_GNN(nn.Module):
         tree_x = self.gnn_5(tree_x, edge_index)
         tree_x = self.gnn_norm_5(tree_x).relu()
 
-        #x = global_max_pool(tree_x, batch)
         x = self.pool(tree_x, batch) 
         
         x = self.fcn_1(x)
