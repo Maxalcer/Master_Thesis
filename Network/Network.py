@@ -16,9 +16,9 @@ class DQN(nn.Module):
         self.mutation_features.append(nn.Linear(mutation_size, hidden_size))
         self.combined.append(nn.Linear(64*3, hidden_size))
 
-        #self.tree_features.append(nn.LayerNorm(hidden_size))
-        #self.mutation_features.append(nn.LayerNorm(hidden_size))
-        #self.combined.append(nn.LayerNorm(hidden_size))
+        self.tree_features.append(nn.LayerNorm(hidden_size))
+        self.mutation_features.append(nn.LayerNorm(hidden_size))
+        self.combined.append(nn.LayerNorm(hidden_size))
 
         self.tree_features.append(nn.ReLU())
         self.mutation_features.append(nn.ReLU())
@@ -29,9 +29,9 @@ class DQN(nn.Module):
             self.mutation_features.append(nn.Linear(hidden_size, hidden_size))
             self.combined.append(nn.Linear(hidden_size, hidden_size))
 
-            #self.tree_features.append(nn.LayerNorm(hidden_size))
-            #self.mutation_features.append(nn.LayerNorm(hidden_size))
-            #self.combined.append(nn.LayerNorm(hidden_size))
+            self.tree_features.append(nn.LayerNorm(hidden_size))
+            self.mutation_features.append(nn.LayerNorm(hidden_size))
+            self.combined.append(nn.LayerNorm(hidden_size))
 
             self.tree_features.append(nn.ReLU())
             self.mutation_features.append(nn.ReLU())
@@ -41,9 +41,9 @@ class DQN(nn.Module):
         self.mutation_features.append(nn.Linear(hidden_size, 64))
         self.combined.append(nn.Linear(hidden_size, hidden_size))
 
-        #self.tree_features.append(nn.LayerNorm(64))
-        #self.mutation_features.append(nn.LayerNorm(64))
-        #self.combined.append(nn.LayerNorm(hidden_size))
+        self.tree_features.append(nn.LayerNorm(64))
+        self.mutation_features.append(nn.LayerNorm(64))
+        self.combined.append(nn.LayerNorm(hidden_size))
         
         self.tree_features.append(nn.ReLU())
         self.mutation_features.append(nn.ReLU())

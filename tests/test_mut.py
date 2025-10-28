@@ -1,9 +1,10 @@
 import sys
-sys.path.append('Network')
-sys.path.append('Tree')
-sys.path.append('GNN_Features')
-sys.path.append('features')
-sys.path.append('Enviroment')
+sys.path.append('../')
+sys.path.append('../Network')
+sys.path.append('../Tree')
+sys.path.append('../GNN_Features')
+sys.path.append('../features')
+sys.path.append('../Enviroment')
 from helper import *
 from greedy import solve_greedy
 from SCITE_solve import solve_scite
@@ -27,10 +28,10 @@ matrix_paths = glob.glob("/home/mi/maxa55/Master_Thesis/Data/test/n_mut/valid*.n
 matrix_paths = sorted(matrix_paths)
 
 agent_gnn = Agent_GNN_Features(alpha, beta)
-agent_gnn.load_net("/home/mi/maxa55/Master_Thesis/Results/Trained Networks/gnn_features/trained_net_15.py")
+agent_gnn.load_net("/home/mi/maxa55/Master_Thesis/Results/Trained Networks/gnn_features/trained_net_double.py")
 
 agent_feat = Agent_Features_Fixed(alpha, beta)
-agent_feat.load_net("/home/mi/maxa55/Master_Thesis/Results/Trained Networks/feature/trained_net_fixed_mix_15.py")
+agent_feat.load_net("/home/mi/maxa55/Master_Thesis/Results/Trained Networks/feature/trained_net_fixed_double.py")
 
 results = []
 
@@ -41,10 +42,10 @@ for i in range(len(all_data)):
     gt_tree = MutationTree(n_mut, n_cells, all_newick[i])
     gt_llh = round(gt_tree.conditional_llh(all_data[i], 0.01, 0.2), 4)
 
-    start_llh, end_llh = agent_gnn.solve_tree(all_data[i])
+    start_llh, end_llh = agent_gnn.solve_tree(all_data[i], n_mut*2)
     perf_gnn = min(1, round(abs(end_llh - start_llh)/abs(gt_llh - start_llh), 4))
 
-    start_llh, end_llh = agent_feat.solve_tree(all_data[i])
+    start_llh, end_llh = agent_feat.solve_tree(all_data[i], n_mut*2)
     perf_feat = min(1, round(abs(end_llh - start_llh)/abs(gt_llh - start_llh), 4))
 
     start_llh, end_llh = solve_greedy(all_data[i], alpha, beta)
@@ -59,7 +60,7 @@ for i in range(len(all_data)):
     results.append({'Method': "SCITE", 'Num_Mut': n_mut, 'Perf': perf_scite})
 
 df = pd.DataFrame(results)
-df.to_csv("/home/mi/maxa55/Master_Thesis/Results/Plots/Num_Mut.csv", index=False)
+df.to_csv("/home/mi/maxa55/Master_Thesis/Results/Plots/Num_Mut_Double.csv", index=False)
 
 
 plt.figure(figsize=(10, 6))
@@ -69,5 +70,5 @@ plt.ylabel('Performance')
 plt.xlabel('Number of Mutations')
 plt.legend(title='Method')
 plt.tight_layout()
-plt.savefig("/home/mi/maxa55/Master_Thesis/Results/Plots/Num_Mut.png")
+plt.savefig("/home/mi/maxa55/Master_Thesis/Results/Plots/Num_Mut_Double.png")
 plt.show()
