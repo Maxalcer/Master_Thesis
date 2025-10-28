@@ -1,9 +1,0 @@
-digraph G {
-node [color=deeppink4, style=filled, fontcolor=white];
-2 -> 1;
-5 -> 2;
-4 -> 3;
-"root" -> 4;
-4 -> 5;
-1 -> 6;
-}
