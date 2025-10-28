@@ -47,6 +47,7 @@ void initRand();
 int* getRandTreeCode(int n);
 int* prueferCode2parentVector(int* code, int codeLength);
 bool** parentVector2ancMatrix(int* parent, int n);
+int* removeNodeFromParentVector(const int* parents, int n, int nodeToRemove);
 vector<vector<int> > getChildListFromParentVector(int* parents, int n);
 int** getRandomDataMatrix(int n, int m, bool** treeMatrix);
 int** getRandomDataMatrixWithDoubleMut(int n, int m, bool** ancMatrix, int doubleMut);
@@ -106,8 +107,6 @@ int main(int argc, char* argv[]) {
 		nodeCount++;
 	}
 
-
-
 	//cout << fileName << params.str() << "\n";
 	for(int i=0; i< rep; i++){
 		if(addDoubleMut){
@@ -122,12 +121,18 @@ int main(int argc, char* argv[]) {
 		int* treeCode = getRandTreeCode(nonRootNodeCount);
 		int treeCodeLength = nonRootNodeCount-1;
 		//print_intArray(treeCode, nodeCount-1);
-		int* parentVector = prueferCode2parentVector(treeCode, treeCodeLength);
-		//print_intArray(parentVector, nodeCount);
-		vector<vector<int> > childLists = getChildListFromParentVector(parentVector, nonRootNodeCount);
 		stringstream newick;
-		newick << getNewickCode(childLists, nodeCount-1) << "\n";                                 // DFS of tree starting with id of root (n or n+1)
-		//cout << newick.str();
+		int* parentVector = prueferCode2parentVector(treeCode, treeCodeLength);
+		if (addDoubleMut){
+			//int* parentVector_new = removeNodeFromParentVector(parentVector, nonRootNodeCount, nonRootNodeCount - 1);
+			
+			vector<vector<int> > childLists = getChildListFromParentVector(parentVector, nonRootNodeCount);
+			newick << getNewickCode(childLists, nodeCount-1) << "\n"; 
+		}
+		else{
+			vector<vector<int> > childLists = getChildListFromParentVector(parentVector, nonRootNodeCount);
+			newick << getNewickCode(childLists, nodeCount-1) << "\n"; 
+		}                  
 		writeToFile(newick.str(), getFileName(i, fileName, params.str(), ".newick"));
 		writeToFile(getGraphVizFile2(parentVector, nodeCount, doubleMut, addDoubleMut), getFileName(i, fileName, params.str(), ".gv"));
 		//cout << getGraphVizFile2(parentVector, nodeCount, doubleMut);
@@ -148,41 +153,45 @@ int main(int argc, char* argv[]) {
 
 		// create doublet samples and add noise
 
-		for(int x=0; x<maxDoubletCount; x++){    // for doublet x, merge mutation states of samples x and m+x to create a doublet
+		for(int x=-1; x<maxDoubletCount; x++){    // for doublet x, merge mutation states of samples x and m+x to create a doublet
+			if(x>-1){
+				for(int z=0; z<n; z++){
+					//cout << "columns " << x << " and " << m+x << "\n";
+					if(data[z][x] || data[z][m+x]){
+						data[z][x] = true;
+					}
+					else{
+						data[z][x] = false;               // state of mutation z is 1 if it is present in either sample x or sample m+x
+					}
+				}
+            }
 
-			for(int z=0; z<n; z++){
-				//cout << "columns " << x << " and " << m+x << "\n";
-				if(data[z][x] || data[z][m+x]){
-					data[z][x] = true;
-				}
-				else{
-					data[z][x] = false;               // state of mutation z is 1 if it is present in either sample x or sample m+x
-				}
-			}
 			stringstream params2;
 			params2 << params.str() << "_" << x+1 << "doublets";
-		}
-			
 
-		// add noise
-		int** noisy =  getNoisyMatrix(data, n, m, fp, fn);
-		//print_intMatrix(noisy, n, m, ' ');
-		//cout << "\n";
-		writeToFile(matrixToString(data,  n ,m), getFileName(i, fileName, params.str(), ".data"));
-		writeToFile(matrixToString(noisy, n, m), getFileName(i, fileName, params.str(), ".noisy"));
-		//cout << getFileName(i, fileName, params2.str(), ".data") << "\n";
-		for(int j=na_min; j<=na_max; j++){
-			double na_rate = j/100.0;
-			//cout << "missing values rate: " << na_rate << "\n";
-			int** missingData = addMissingValues(noisy, n, m, na_rate);
-			stringstream ending;
-			ending << ".noisy" << j << "pctMissingData";
-			writeToFile(matrixToString(missingData, n, m), getFileName(i, fileName, params.str(), ending.str()));
-			//print_intMatrix(transposeMatrix(missingData, n, m), m, n, ' ');
+			// add noise
+			int** noisy =  getNoisyMatrix(data, n, m, fp, fn);
+
+			//print_intMatrix(noisy, n, m, ' ');
 			//cout << "\n";
-			free_intMatrix(missingData);
+			writeToFile(matrixToString(data,  n ,m), getFileName(i, fileName, params2.str(), ".data"));
+			writeToFile(matrixToString(noisy, n, m), getFileName(i, fileName, params2.str(), ".noisy"));
+
+			//cout << getFileName(i, fileName, params2.str(), ".data") << "\n";
+
+			for(int j=na_min; j<=na_max; j++){
+				double na_rate = j/100.0;
+				//cout << "missing values rate: " << na_rate << "\n";
+				int** missingData = addMissingValues(noisy, n, m, na_rate);
+				stringstream ending;
+				ending << ".noisy" << j << "pctMissingData";
+				writeToFile(matrixToString(missingData, n, m), getFileName(i, fileName, params2.str(), ending.str()));
+				//print_intMatrix(transposeMatrix(missingData, n, m), m, n, ' ');
+				//cout << "\n";
+				free_intMatrix(missingData);
+			}
+			free_intMatrix(noisy);
 		}
-		free_intMatrix(noisy);
 
 		free_boolMatrix(ancMatrix);
 		free_intMatrix(data);
@@ -438,6 +447,26 @@ double getProbNormDistr(double prob, double stdDev){
 	return newProb ;
 }
 
+int* removeNodeFromParentVector(const int* parents, int n, int nodeToRemove) {
+    int* newParents = new int[n-1]; // size reduced by 1
+    int newIndex = 0;
+
+    for(int i = 0; i < n; i++){
+        if(i == nodeToRemove) continue;
+
+        int p = parents[i];
+
+        if(p == nodeToRemove) {
+            p = parents[nodeToRemove];
+        }
+        if(p > nodeToRemove) {
+            p -= 1;
+        }
+        newParents[newIndex++] = p;
+    }
+    return newParents;
+}
+
 /* converts a parent vector to the list of children */
 vector<vector<int> > getChildListFromParentVector(int* parents, int n){
 	int nodes = n+1;
@@ -457,7 +486,7 @@ vector<vector<int> > getChildListFromParentVector(int* parents, int n){
 
 /* converts a tree given as lists of children to the Newick tree format */
 /* Note: This works only if the recursion is started with the root node which is n+1 */
-string getNewickCode(vector<vector<int> > list, int root){
+string getNewickCode(vector<vector<int>> list, int root){
 	stringstream newick;
 	newick << root+1;
 	vector<int> rootChilds = list.at(root);
@@ -465,6 +494,7 @@ string getNewickCode(vector<vector<int> > list, int root){
 		newick << "(";
 		bool first = true;
 		for(int i=0; i<rootChilds.size(); i++){
+			int child = rootChilds[i];
 			if(!first){
 				newick << ",";
 			}
@@ -563,7 +593,7 @@ std::string getGraphVizFile2(int* parents, int nodeCount, int doubleMut, bool ad
 		stringstream nodeLabel;
 		stringstream parentLabel;
 		if(i==nodeCount-2 && addDoubleMut){                                           // node i is second copy of double mutation
-            cout << addDoubleMut << "\n";
+            // cout << addDoubleMut << "\n";
 			nodeLabel << "\"" << doubleMut+1 << "_copy" << "\"";
 		}
 		else{

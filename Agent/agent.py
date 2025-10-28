@@ -143,7 +143,7 @@ class Agent():
         memory = ReplayMemory(10000)
         noisy = (self.alpha != 0) | (self.beta != 0)
 
-        all_data = read_data(data_path, noisy = noisy, validation = False)
+        all_data, _ = read_data(data_path, noisy = noisy, validation = False)
         all_trees = read_newick(data_path)
 
         data_train, data_test, trees_train, trees_test = train_test_split(all_data, all_trees, test_size=0.30)
@@ -166,7 +166,7 @@ class Agent():
                 matrix = self.transform_matrix(data_train[i])         
                 tree = self.env.reset(gt_llh, data_train[i])
 
-                for _ in range(P.HORIZON):
+                for _ in range(self.n_mut*2):
                     state, actions = self.get_state_actions(tree, data_train[i])
                     action = self.predict_step_epsilon_soft(state, actions, matrix, temp_scheduler.get_instance(), eps_scheduler.get_instance())
                     action, action_indx = self.transform_action(action, actions, tree.all_possible_spr)                    
@@ -228,7 +228,7 @@ class Agent():
             state, actions = self.get_state_actions(tree, test_data[i])
             start_llh = self.env.current_llh
             matrix = self.transform_matrix(test_data[i])
-            for _ in range(P.HORIZON):
+            for _ in range(self.n_mut*2):
                 last_llh = self.env.current_llh
                 action = self.predict_step(state, actions, matrix)
                 action, action_indx = self.transform_action(action, actions, tree.all_possible_spr)
@@ -249,7 +249,7 @@ class Agent():
         start_llh = round(tree.conditional_llh(data, self.alpha, self.beta), 4)
         current_llh = start_llh
         matrix = self.transform_matrix(data)
-        for _ in range(P.HORIZON):
+        for _ in range(self.n_mut*2):
             last_llh = current_llh
             state, actions = self.get_state_actions(tree, data)
             action = self.predict_step(state, actions, matrix)

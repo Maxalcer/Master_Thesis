@@ -3,7 +3,7 @@ sys.path.append('../Enviroment')
 sys.path.append('../Network')
 sys.path.append('../Tree')
 sys.path.append('../')
-from helper import read_data, read_newick, Scheduler, timeit
+from helper import read_data, read_newick, Scheduler, timeit, read_data_double
 from mutation_tree import MutationTree
 from Enviroment import MutTreeEnv
 from Network_features_fixed import DQN 
@@ -131,7 +131,7 @@ class Agent_Features_Fixed():
             q_vals_target = self.target_net(next_state_actions)
             q_vals_target_split = torch.split(q_vals_target, num_actions_per_item)
             max_next_state_action_values = torch.stack([q[i] for q, i in zip(q_vals_target_split, argmax_indices)]).to(self.device)
-            max_next_state_action_values = torch.clamp(max_next_state_action_values, min=-10, max=25)
+            max_next_state_action_values = torch.clamp(max_next_state_action_values, min=-10, max=20)
         return max_next_state_action_values.squeeze()
 
     def __optimize_model(self, memory, optimizer):
@@ -169,9 +169,10 @@ class Agent_Features_Fixed():
         noisy = (self.alpha != 0) | (self.beta != 0)
 
         all_data = read_data(data_path, noisy = noisy, validation = False)
+        #all_data = read_data_double(data_path, 0.1, noisy = noisy)
         all_trees = read_newick(data_path)
 
-        #all_data, _, all_trees, _ = train_test_split(all_data, all_trees, test_size=0.85)
+        #all_data, _, all_trees, _ = train_test_split(all_data, all_trees, test_size=0.80)
 
         data_train, data_test, trees_train, trees_test = train_test_split(all_data, all_trees, test_size=0.30)
 
@@ -226,7 +227,7 @@ class Agent_Features_Fixed():
                     lr_scheduler.step()   
                     self.learning_curve.append(round(loss, 4))
 
-                perc = int(100*(e*len(data_train)+i)/(len(data_train)*P.EPISODES))
+                perc = int(50*(e*len(data_train)+i)/(len(data_train)*P.EPISODES))
                 if (perc != last_perc):
                     train_acc = self.test_net(data_train, trees_train)
                     test_acc = self.test_net(data_test, trees_test)
@@ -254,7 +255,7 @@ class Agent_Features_Fixed():
 
         perf = 0
         c = 0
-        for i in range(len(test_data)//2):
+        for i in range(len(test_data)//8):
             gt_tree = MutationTree(test_data[i].shape[0], test_data[i].shape[1], test_trees[i])
             gt_llh = gt_tree.conditional_llh(test_data[i], self.alpha, self.beta)
             tree = self.env.reset(gt_llh, test_data[i])
@@ -291,7 +292,8 @@ class Agent_Features_Fixed():
         start_llh = round(tree.conditional_llh(data, self.alpha, self.beta), 4)
         current_llh = start_llh
 
-        for _ in range(horizon):
+        for h in range(horizon):
+            #print(h)
             last_llh = current_llh
             state_actions = self.get_state_actions(tree, data)
             action = self.predict_step(state_actions)
@@ -311,3 +313,28 @@ class Agent_Features_Fixed():
         end_llh = max(last_llh, current_llh)
         
         return start_llh, end_llh
+    
+    def solve_tree_fast(self, data):
+        self.policy_net.eval()
+        n_mut = data.shape[0]
+        n_cells = data.shape[1]
+        tree = MutationTree(n_mut, n_cells)
+        pvec = np.repeat(n_mut, n_mut + 1)
+        pvec[-1] = -1
+        tree.use_parent_vec(pvec, n_mut)
+
+        for _ in range(n_mut*2):
+            state_actions = self.get_state_actions(tree, data)
+            action = self.predict_step(state_actions)
+            state_action = state_actions[action.item()].unsqueeze(0)             
+            swap_idx = state_action[0, 28]
+            
+            if (swap_idx != -1):
+                action_indx = int(swap_idx.item())
+                tree.swap(action_indx)
+            else:
+                indices = np.argwhere(tree.all_possible_spr == 1)
+                action_indx = indices[action.item()]
+                tree.perf_spr(action_indx[0], action_indx[1])
+        
+        return tree

@@ -3,7 +3,7 @@ sys.path.append('../Enviroment')
 sys.path.append('../Network')
 sys.path.append('../Tree')
 sys.path.append('../')
-from helper import read_data, read_newick, Scheduler, timeit
+from helper import read_data, read_newick, Scheduler, timeit, read_data_double
 from mutation_tree import MutationTree
 from Enviroment import MutTreeEnv
 from Network_GNN_Features import DQN_GNN
@@ -175,8 +175,12 @@ class Agent_GNN_Features():
         memory = ReplayMemory(10000)
         noisy = (self.alpha != 0) | (self.beta != 0)
 
-        all_data = read_data(data_path, noisy = noisy)
+        all_data, _ = read_data(data_path, noisy = noisy)
+        
+        #all_data = read_data_double(data_path, 0.1, noisy = noisy)
         all_trees = read_newick(data_path)
+        if(len(all_data) != len(all_trees)): print("möööp")
+        all_data, _, all_trees, _ = train_test_split(all_data, all_trees, test_size=0.80)
         data_train, data_test, trees_train, trees_test = train_test_split(all_data, all_trees, test_size=0.30)
 
         self.learning_curve = []
@@ -321,3 +325,27 @@ class Agent_GNN_Features():
         end_llh = max(last_llh, current_llh)
         
         return start_llh, end_llh
+
+    def solve_tree_fast(self, data):
+        self.policy_net.eval()
+        n_mut = data.shape[0]
+        n_cells = data.shape[1]
+        tree = MutationTree(n_mut, n_cells)
+        pvec = np.repeat(n_mut, n_mut + 1)
+        pvec[-1] = -1
+        tree.use_parent_vec(pvec, n_mut)
+
+        for _ in range(n_mut*2):
+            state, actions = self.get_state_actions(tree, data)
+            graph_data = self.get_graph_data(state, actions)
+            action = self.predict_step(Batch.from_data_list(graph_data))
+            swap_idx = torch.where(actions[action.item(), :, -1] == 1)[0]
+            if (len(swap_idx) != 0):
+                action_indx = swap_idx.item()
+                tree.swap(action_indx)
+            else:
+                indices = np.argwhere(tree.all_possible_spr == 1)
+                action_indx = indices[action.item()]
+                tree.perf_spr(action_indx[0], action_indx[1])
+        
+        return tree
